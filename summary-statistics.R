@@ -4,6 +4,7 @@
 # DOI:10.1371/journal.pcbi.1005416
 
 
+
 #### Libraries & Sources####
 
 
@@ -20,8 +21,19 @@ source("encode-cblv.R")
 #### Nodes data.frame ####
 
 
+#' Initialize a data.frame for nodes 
+#'
+#' Create a data.frame filled with NA values, the column of the data.frame
+#' are properties of the nodes of the phylogenetic tree. These columns are later
+#' filled by the functions fill_xxx_nodes() where 'xxx' is the name of the 
+#' column we want to fill.
+#'
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 create_nodes_data_frame <- function(tree){
-  # Initialize the data.frame containing nodes variables 
   n <- length(tree$orig$idx) + 1 
   n_tips <- length(tree$tip.label)
   df.nodes <- data.frame(index=rep(NA,n),   # index of the node
@@ -35,31 +47,75 @@ create_nodes_data_frame <- function(tree){
 }
 
 
+#' Fill the "index" column of df.nodes
+#'
+#' Fill the "index" column of the nodes data.frame for nodes with their indexes. 
+#' These indexes correspond to the rows.
+#'
+#' @param df.nodes data.frame created by create_nodes_data_frame()
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_index <- function(df.nodes){
-  # Fill the "index" column of the nodes data.frame
   n <- length(df.nodes[,1])
   df.nodes["index"]  <- 1:n
   return(df.nodes)
 }
 
 
+#' Fill the "is.tip" column of df.nodes
+#'
+#' Fill the "is.tip" column of the nodes data.frame with logical. 
+#' If the node is a tip, the entry is TRUE
+#' If the node is not a tip (i.e. an internal node), the entry is FALSE
+#'
+#' @param df.nodes data.frame
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_is.tip <- function(df.nodes, tree){
-  # Fill the "is.tip" column of the nodes data.frame
   n_tips <- length(tree$tip.label)
   df.nodes["is.tip"] <- as.logical(df.nodes["index"] <= n_tips)
   return(df.nodes)
 }
 
 
+#' Fill the "dist" column of df.nodes
+#'
+#' Fill the "dist" column of the nodes data.frame with the distance to the root 
+#' of each nodes. This distance is computed by the function from castor package 
+#' get_all_distances_to_root(tree)
+#'
+#' @param df.nodes data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_dist <- function(df.nodes){
-  # Fill the "dist" column of the nodes data.frame
   df.nodes["dist"]   <- castor::get_all_distances_to_root(tree)
   return(df.nodes)
 }
 
 
+#' Fill the "part" column of df.nodes
+#'
+#' Fill the "part" column of the  nodes data.frame with the corresponding part 
+#' of the tree. The phylogenetic tree is cut in three equals part in time.
+#' If you call D>0 the time length of our tree (maximal distance to the root), 
+#' then nodes with distance to the root d: 
+#' - d<D/3 belongs to part 1; 
+#' - D/3<d<2D/3 belongs to part 2;
+#' - d>2D/3 belongs to part 3.
+#'
+#' @param df.nodes data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_part <- function(df.nodes){
-  # Fill the "part" column of the nodes data.frame
   dist <- df.nodes$dist 
   height <- get_height(df.nodes)
   greater1 <- as.numeric(dist > height/3)
@@ -69,38 +125,90 @@ fill_nodes_part <- function(df.nodes){
 }
 
 
+#' Fill the "colless" column of df.nodes
+#'
+#' Fill the "colless" column of the nodes data.frame with the corresponding 
+#' colless score. 
+#' The colless score is the absolute difference between the number of leaves on
+#' the left side and the number of leaves on the right side.
+#' This score can be computed only for internal nodes. Thus, rows 
+#' corresponding to tips are left with NA.
+#' See Saulnier Et. Al. 2017 - DOI:10.1371/journal.pcbi.1005416
+#'
+#' @param df.nodes data.frame
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_colless <- function(df.nodes, tree){
-  # Fill the "colless" column of the nodes data.frame
   n <- length(df.nodes[,1])
   for (i in 1:n){
-    if (df.nodes[i, "is.tip"] == FALSE){
-      df.nodes[i, "colless"] <- get_nodes_colless(df.nodes, tree, i)
+    if (df.nodes[i, "is.tip"] == FALSE){ # compute if node is internal
+      df.nodes[i, "colless"] <- get_nodes_colless(tree, i) # colless of node i
     }
   }
   return(df.nodes)
 }
 
-
+#' Fill the "stair" column of df.nodes
+#'
+#' Fill the "stair" column of the nodes data.frame with the corresponding 
+#' stairecaseness. 
+#' The stairecaseness is the ratio of the minimal number of leaves on a side 
+#' over the maximal number of leaves on a side.
+#' the left side and the number of leaves on the right side.
+#' This score can be computed only for internal nodes. Thus, rows 
+#' corresponding to tips are left with NA.
+#' Saulnier Et. Al. 2017 - DOI:10.1371/journal.pcbi.1005416
+#'
+#' @param df.nodes data.frame
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_stair <- function(df.nodes, tree){
-  # Fill the "stair" column of the nodes data.frame
   n <- length(df.nodes[,1])
   for (i in 1:n){
     if (df.nodes[i, "is.tip"] == FALSE){
-      df.nodes[i, "stair"] <- get_nodes_staircaseness2(df.nodes, tree, i)
+      df.nodes[i, "stair"] <- get_nodes_staircaseness2(tree, i)
     }
   }
   return(df.nodes)
 }
 
 
+#' Fill the "depth" column of df.nodes
+#'
+#' Fill the "depth" column of the nodes data.frame with the corresponding depth. 
+#' The depth is the minimum number of edges separating the node to the root. 
+#'
+#' @param df.nodes data.frame
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_depth <- function(df.nodes, tree){
-  # Fill the "depth" column of the nodes data.frame
   dist_edge <- castor::get_all_distances_to_root(tree, as_edge_count=TRUE)
   df.nodes["depth"] <- dist_edge
   return(df.nodes)
 }
 
 
+#' Fill all columns of df.nodes
+#'
+#' Fill all the columns the nodes data.frame. 
+#' This function calls successively the fill_xxx_nodes() functions to fill each 
+#' column one by one.
+#'
+#' @param df.nodes data.frame
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_nodes_all <- function(df.nodes, tree){
   # Fill all the columns of the nodes data.frame 
   df.nodes <- fill_nodes_index(df.nodes)
@@ -114,42 +222,57 @@ fill_nodes_all <- function(df.nodes, tree){
 }
 
 
-get_nodes_colless <- function(df.nodes, tree, node){
-  # Get the colless score of a given node of a tree
-  
-  n_child_list <- list(0, 0) # store the number of left & right children
-  children <- phangorn::Children(tree, node)
-  
+#' Compute the colless score of a node
+#'
+#' Compute the absolute difference of the number of right and left leaves of an
+#' internal node.
+#' See Saulnier Et. Al. 2017 - DOI:10.1371/journal.pcbi.1005416
+#'
+#' @param tree phylo tree
+#' @param node integer  
+#'
+#' @return data.frame
+#' @export
+#' @examples
+get_nodes_colless <- function(tree, node){
+  n_leaf_list <- list(0, 0) # to store the number of left & right leaves
+  children <- phangorn::Children(tree, node) # both children of the node
   for (i in 1:2){
-    desc_child <- phangorn::Descendants(tree, children[i])[[1]]
-    n_child <- length(desc_child) # number of children on one side (L or R)
-    n_child_list[[i]] <- n_child  # save the value 
+    leaf   <- phangorn::Descendants(tree, children[i])[[1]]
+    n_leaf <- length(leaf) # number of leaves on one side (L or R)
+    n_leaf_list[[i]] <- n_leaf  # save the value 
   }
-  
-  # colless = |number of left children - number of right children|
-  colless <- abs(n_child_list[[1]] - n_child_list[[2]])
-  
+  # Compute the absolute difference
+  colless <- abs(n_leaf_list[[1]] - n_leaf_list[[2]])
   return(colless)
 }
 
 
-get_nodes_staircaseness2 <- function(df.nodes, tree, node){
-  # Get the stairecaseness of a given of a tree
-  
-  n_child_list <- c(0, 0) # store the number of left & right children
-  children <- phangorn::Children(tree, node)
-  
+#' Compute the stairecaseness of a node
+#'
+#' Compute the ratio between the minumum and maximum number of leaves on a side
+#' for an internal node.
+#' See Saulnier Et. Al. 2017 - DOI:10.1371/journal.pcbi.1005416
+#'
+#' @param tree phylo tree
+#' @param node integer  
+#'
+#' @return data.frame
+#' @export
+#' @examples
+get_nodes_staircaseness2 <- function(tree, node){
+  n_leaf_list <- c(0, 0) # store the number of left & right leaves
+  children <- phangorn::Children(tree, node) # children of the node 
   for (i in 1:2){
-    desc_child <- phangorn::Descendants(tree, children[i])[[1]]
-    n_child <- length(desc_child) # number of children on one side (L or R)
-    n_child_list[[i]] <- n_child  # save the value 
+    leaf <- phangorn::Descendants(tree, children[i])[[1]]
+    n_leaf <- length(leaf) # number of children on one side (L or R)
+    n_leaf_list[[i]] <- n_leaf  # save the value 
   }
-  
   # stair = (min(left or right children)/max(left or right children))
-  stair <- min(n_child_list)/max(n_child_list)
-  
+  stair <- min(n_leaf_list)/max(n_leaf_list)
   return(stair)
 }
+
 
 #### end ####
 
@@ -157,8 +280,19 @@ get_nodes_staircaseness2 <- function(df.nodes, tree, node){
 #### Edges data.frame ####
 
 
+#' Initialize a data.frame for edges 
+#'
+#' Create a data.frame filled with NA values, the column of the data.frame
+#' are properties of the edges of the phylogenetic tree. These columns are later
+#' filled by the functions fill_xxx_edges() where 'xxx' is the name of the 
+#' column we want to fill.
+#'
+#' @param tree phylo tree
+#'
+#' @return data.frame
+#' @export
+#' @examples
 create_edges_data_frame <- function(tree){
-  # Initialize the data.frame containing nodes variables 
   n <- length(tree$edge.length)
   df.edges <- data.frame(index=rep(NA,n),   # index of the edge  
                          is.ext=rep(NA,n),  # is the branch external? 
@@ -170,42 +304,106 @@ create_edges_data_frame <- function(tree){
 }
 
 
+#' Fill the "index" column of df.edges
+#'
+#' Fill the "index" column of the edges data.frame for nodes with their indexes. 
+#' These indexes correspond to the rows.
+#'
+#' @param df.edges data.frame created by create_nodes_data_frame()
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_edges_index <- function(df.edges){
-  # Fill the "index" column of the edges data.frame
   n <- length(df.edges[,1])
   df.edges["index"]  <- 1:n
   return(df.edges)
 }
 
 
+#' Fill the "is.ext" column of df.edges
+#'
+#' Fill the "is.ext" column of the edges data.frame with logical. 
+#' If the edge is external (i.e. linked to a tip), the entry is TRUE
+#' If the edge is not external, the entry is FALSE
+#'
+#' @param df.edges data.frame
+#' @param df.nodes data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_edges_is.ext <- function(df.edges, df.nodes){
-  # Fill the "is.ext" column of the edges data.frame
   df.edges["is.ext"] <- df.nodes[df.edges$node2, "is.tip"]
   return(df.edges)
 }
 
-
+#' Fill the "length" column of df.edges
+#'
+#' Fill the "length" column of the edges data.frame with their length (time). 
+#'
+#' @param df.edges data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_edges_length <- function(df.edges){
-  # Fill the "length" column of the edges data.frame
   df.edges["length"] <- tree$edge.length
   return(df.edges)
 }
 
 
+#' Fill the "part" column of df.edges
+#'
+#' Fill the "part" column of the edges data.frame with the corresponding part 
+#' of the branch. As for the nodes, the tree is sliced into three equal parts. 
+#' The part of the branch is determined by the part of younger node.
+#' e.g. if the branch goes from a node belonging the part 3 and a node belonging 
+#' to part 2 of the tree, then the branch belongs to part 2.  
+#'
+#' @param df.edges data.frame
+#' @param df.nodes data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_edges_part <- function(df.edges, df.nodes){
-  # Fill the "part" column of the edges data.frame
   df.edges["part"] <- df.nodes[df.edges$node2, "part"]
   return(df.edges)
 }
 
 
+#' Fill the "node1" & "node2" columns of df.edges
+#'
+#' Fill the "node1" & "node2" columns of the edges data.frame. with the relevant
+#' indexes.
+#' "node1" is the older node of the branch 
+#' "node2" is the younger node of the branch
+#' As time goes, the branch goes from node1 to node2
+#'
+#' @param df.edges data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_edges_node12 <- function(df.edges){
-  # Fill the "node1" & "node2" column of the edges data.frame
   df.edges[c("node1","node2")] <- tree$edge
   return(df.edges)
 }
 
 
+#' Fill all columns of df.edges
+#'
+#' Fill all the columns the edges data.frame. 
+#' This function calls successively the fill_xxx_edges() functions to fill each 
+#' column one by one.
+#'
+#' @param df.edges data.frame
+#' @param df.nodes data.frame
+#'
+#' @return data.frame
+#' @export
+#' @examples
 fill_edges_all <- function(df.edges, df.nodes){
   # Fill all the columns of the edges data.frame
   df.edges <- fill_edges_index(df.edges)
@@ -223,16 +421,16 @@ fill_edges_all <- function(df.edges, df.nodes){
 #### Summary Statistics  ####
 
 
-# bl := branch length 
-# a  := all branches 
-# e  := external branches (i.e. branches connected to a tip)
-# i  := piecewise branches i.e. branches in the part {1/3;2/3;3/3}
-# ie := ratio of piecewise internal branches over external branches
-# stats stands for mean, median and variance 
-
-
+#' Compute the branch lengths statistics
+#'
+#' Given a list of branch lengths, returns the mean, median and variance.
+#'
+#' @param bl list
+#'
+#' @return stats (list) w/ stats$mean, stats$med, stats$var 
+#' @export
+#' @examples
 get_bl_stats <- function(bl){
-  # Returns the mean, median and variance of a list of branch lengths (bl)
   stats <- list("mean"=-999, "med"=-999, "var"=-999)
   stats$mean <- mean(bl)
   stats$med  <- median(bl)
@@ -241,9 +439,23 @@ get_bl_stats <- function(bl){
 }
 
 
+#' Compute the branch lengths summary statistics 
+#'
+#' Compute the 24 summary statistics related to branch lengths 
+#' - a.stat means that all branches are taken into account to compute stat
+#' - e.stat means that only external branches are taken into account 
+#' - i.x.stat means that only the internal branches belonging to the part x of 
+#'   the tree are taken into account 
+#' - ie.x.stat = i.x.stat / e.stat
+#' 
+#'
+#' @param df.edges data.frame
+#'
+#' @return list
+#' @export
+#' @examples
 get_bl_ss <- function(df.edges){
-  # Returns the list of all branch lengths summary statistics (24)
-  
+
   ss.bl   <-   list("a.mean"   =-999, "a.med"   =-999, "a.var"   =-999,
                     "e.mean"   =-999, "e.med"   =-999, "e.var"   =-999,
                     "i.1.mean" =-999, "i.1.med" =-999, "i.1.var" =-999,
@@ -288,6 +500,17 @@ get_bl_ss <- function(df.edges){
 }
 
 
+#' Check that is the node is in a ladder 
+#'
+#' A node is a considered to be in a ladder if:
+#' one of its children is a tip & the other one is an internal node.
+#'
+#' @param node int 
+#' @param tree phylo tree
+#'
+#' @return logical
+#' @export
+#' @examples
 is_in_ladder <- function(node, tree){
   sum <- 0
   if (!is_tip(node, tree)){
@@ -298,6 +521,19 @@ is_in_ladder <- function(node, tree){
 }
 
 
+#' Traverse the tree and write ladders
+#'
+#' Traverse the tree in preoder and write the nodes indexes belonging to ladders 
+#' found through the traverse. Nodes that don't belong to ladder are marked
+#' as -1.
+#'
+#' @param tree phylo tree
+#' @param node integer 
+#' @param preorder vector 
+#'
+#' @return vector containing ladders (separated by -1)
+#' @export
+#' @examples
 traverse_ladder <- function(tree, node, preorder){
   n_tips <- length(tree$tip.label)
   root <- n_tips + 1 
@@ -320,6 +556,17 @@ traverse_ladder <- function(tree, node, preorder){
 }
 
 
+#' Extract ladders from vector 
+#'
+#' Take the vector generated by traverse_ladder() and extract the ladders 
+#' from it. To do so, we append each ladder (as a sequence of nodes index) to 
+#' a list. Ladder of size one are deleted. 
+#'
+#' @param traverse_ladder vector generate by traverse_ladder()
+#'
+#' @return list of ladders 
+#' @export
+#' @examples
 extract_ladders <- function(traverse_ladder){
   n <- length(traverse_ladder)
   ladder.list <- list()
@@ -337,6 +584,13 @@ extract_ladders <- function(traverse_ladder){
 }
 
 
+#' Sum up the process to find ladders in a tree
+#'
+#' @param tree phylo tree
+#'
+#' @return list of ladders 
+#' @export
+#' @examples
 get_ladders <- function(tree){
   root <- length(tree$tip.label) + 1 
   traverse_ladder <- traverse_ladder(tree, root, c())
@@ -345,6 +599,16 @@ get_ladders <- function(tree){
 }
 
 
+#' Get the maximum ladder size of the tree (divided by n_tips)
+#'
+#' Compute the maximum ladder size (in number of nodes) and divide by the number
+#' of tips in the tree
+#'
+#' @param tree phylo tree
+#'
+#' @return numeric
+#' @export
+#' @examples
 get_max_ladder <- function(tree){
   max_l <- 0
   n_tips <- length(tree$tip.label)
@@ -356,7 +620,16 @@ get_max_ladder <- function(tree){
   return(max_l / n_tips)
 }
 
-
+#' Get the the proportion of internal nodes in ladder
+#'
+#' Compute the proportion of internal nodes that belongs to a ladder. Ladder of 
+#' size one (composed of a single node) are counted as ladder. 
+#'
+#' @param tree phylo tree
+#'
+#' @return numeric
+#' @export
+#' @examples
 get_il_nodes <- function(tree){
   n_tips <- length(tree$tip.label)
   n_nodes <- n_tips - 1 
@@ -370,9 +643,17 @@ get_il_nodes <- function(tree){
 }
 
 
+#' Get the proportion of imbalanced nodes 
+#'
+#' An imbalanced nodes is an internal node that has a different number of leaves 
+#' on the right size and on the left size 
+#'
+#' @param df.nodes data.frame
+#'
+#' @return numeric
+#' @export
+#' @examples
 get_staircaseness1 <- function(df.nodes){
-  # Returns the proportion of imbalanced internal nodes 
-  # that have different numbers of leaves between the left and the right side
   n <- length(tree$orig$idx) + 1 
   n_tips <- length(tree$tip.label)
   n_nodes <- n - n_tips
@@ -381,35 +662,62 @@ get_staircaseness1 <- function(df.nodes){
 }
 
 
+#' Get all the topological summary statistics 
+#'
+#' Summarize all the calls needed to have the summary statistics related to the 
+#' tree topology 
+#'
+#' @param df.nodes data.frame
+#'
+#' @return list (of topological summary statistics)
+#' 
+#' @export
+#' @examples
 get_topo_ss <- function(df.nodes){
-  # Returns the list of all topological summary statistics excluding bl (6)
-  
+
   ss.topo <- list("height"  = -999, "colless" = -999, "sackin"     = -999, 
                   "wdratio" = -999, "deltaw"  = -999, "max_ladder" = -999,
                   "il_nodes"= -999, "stair1"  = -999, "stair2"     = -999)
   
   ss.topo$height     <- get_height(df.nodes)
-  ss.topo$colless    <- df.nodes[df.nodes["is.tip"]==FALSE,]$colless
-  ss.topo$sackin     <- df.nodes[df.nodes["is.tip"]==TRUE,]$depth
+  ss.topo$colless    <- sum(df.nodes$colless, na.rm = TRUE)
+  ss.topo$sackin     <- sum(df.nodes[df.nodes["is.tip"]==TRUE,]$depth)
   ss.topo$wdratio    <- get_wdratio(df.nodes) 
   ss.topo$deltaw     <- get_deltaw(df.nodes)
   ss.topo$max_ladder <- get_max_ladder(tree)
   ss.topo$il_nodes   <- get_il_nodes(tree)
   ss.topo$stair1     <- get_staircaseness1(df.nodes) 
-  ss.topo$stair2     <- df.nodes[df.nodes["is.tip"]==FALSE,]$stair
+  ss.topo$stair2     <- sum(df.nodes$stair, na.rm = TRUE)
   return(ss.topo)
 }
 
 
+#' Get the tree height 
+#'
+#' The height of the tree is also the distance to the root of each tip
+#'
+#' @param df.nodes data.frame
+#'
+#' @return numeric 
+#' @export
+#' @examples
 get_height <- function(df.nodes){
-  # Returns the height of the tree (i.e. max distance to root)
   height <- max(df.nodes$dist)
   return(height)
 }
 
 
+#' Get the wdratio of the tree
+#'
+#' wdratio is defined as the maximal width over the maximal depth of a tree
+#' the width is the number of nodes at a given depth
+#'
+#' @param df.nodes data.frame
+#'
+#' @return numeric 
+#' @export
+#' @examples
 get_wdratio <- function(df.nodes){
-  # Returns the ratio of the maximal width over the maximal depth 
   width <- max(table(df.nodes$depth))
   depth <- max(df.nodes$depth)
   ratio <- width/depth
@@ -417,8 +725,17 @@ get_wdratio <- function(df.nodes){
 }
 
 
+#' Get the deltaw of the tree
+#'
+#' deltaw is defined as the maximal difference in width between two consecutive 
+#' depths 
+#'
+#' @param df.nodes data.frame
+#'
+#' @return numeric 
+#' @export
+#' @examples
 get_deltaw <- function(df.nodes){
-  # Returns the maximal difference in width between two consecutive depths
   table.width <- table(df.nodes$depth)
   n <- length(table.width)-1
   diff <- 0
@@ -429,8 +746,19 @@ get_deltaw <- function(df.nodes){
 }
 
 
+#' Get sampled coordinates of the LTT  
+#'
+#' We take 20 points uniformly distributed in N (number of lineages). 
+#' We use these 20 points to sample the LTT
+#' Not that for this statistics to be relevant the tree needs to have at least 
+#' 20 lineages.
+#'
+#' @param tree phylo tree
+#'
+#' @return matrix 
+#' @export
+#' @examples
 get_ltt_coords <- function(tree){
-  # Returns 20 coordinates (x=time, y=number of lineages) of the LTT 
   ltt.coord <- ape::ltt.plot.coords(tree) 
   n_events <- length(ltt.coord[,1])
   step <- n_events %/% 20
@@ -443,6 +771,18 @@ get_ltt_coords <- function(tree){
 }
 
 
+#' Get slopes of the LTT
+#'
+#' Divide the tree in 3 equals part (trough time) and compute the slope for each
+#' part (named slope$p.i). Then do the ratio of:
+#' - slope of the 2nd over the slope of the 1st part 
+#' - slope of the 3rd over the slope of the 2nd part 
+#'
+#' @param tree phylo tree 
+#'
+#' @return list (of slopes and ratio)
+#' @export
+#' @examples
 get_ltt_slopes <- function(tree){
   
   slopes <- list("p.1" = -999, "p.2" = -999, "p.3" = -999, 
@@ -464,9 +804,17 @@ get_ltt_slopes <- function(tree){
 }
 
 
+#' Compute all the summary statistics 
+#'
+#'
+#' @param df.nodes data.frame
+#' @param df.edges data.frame
+#' @param tree phylo tree 
+#'
+#' @return list (of topological summary statistics)
+#' @export
+#' @examples
 get_all_ss <- function(df.nodes, df.edges, tree){
-  # Returns a list with all the summary statistics (ss) of the tree
-  
   ss.bl   <- get_bl_ss(df.edges)                 # branch length ss 
   ss.topo <- get_topo_ss(df.nodes)               # topological ss
   ss.ltt <- list("coord" = -999, slopes = -999)  # ltt ss
@@ -478,9 +826,16 @@ get_all_ss <- function(df.nodes, df.edges, tree){
 }
 
 
+#' Sum up the process to compute all the summary statistics in one function 
+#'
+#'
+#' @param tree phylo tree 
+#'
+#' @return list (of topological summary statistics)
+#' @export
+#' @examples
 get_ss <- function(tree){
-  # Returns a list of all the summary statistics, given a tree directly
-  
+
   # Create nodes data.frame
   df.nodes <- create_nodes_data_frame(tree)
   df.nodes <- fill_nodes_all(df.nodes, tree)
@@ -504,7 +859,7 @@ ggplot(ltt.df.3, aes(x=time, y=N))+
   stat_regline_equation()
 
 
-tree <- trees(c(.1, 0), "bd", max.taxa=30)[[1]]
+tree <- trees(c(.1, 0), "bd", max.taxa=10)[[1]]
 plot(tree)
 nodelabels()
 tiplabels()
