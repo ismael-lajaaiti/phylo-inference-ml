@@ -90,11 +90,12 @@ fill_nodes_is.tip <- function(df.nodes, tree){
 #' get_all_distances_to_root(tree)
 #'
 #' @param df.nodes data.frame
+#' @param tree phylo tree
 #'
 #' @return data.frame
 #' @export
 #' @examples
-fill_nodes_dist <- function(df.nodes){
+fill_nodes_dist <- function(df.nodes, tree){
   df.nodes["dist"]   <- castor::get_all_distances_to_root(tree)
   return(df.nodes)
 }
@@ -213,7 +214,7 @@ fill_nodes_all <- function(df.nodes, tree){
   # Fill all the columns of the nodes data.frame 
   df.nodes <- fill_nodes_index(df.nodes)
   df.nodes <- fill_nodes_is.tip(df.nodes, tree)
-  df.nodes <- fill_nodes_dist(df.nodes)
+  df.nodes <- fill_nodes_dist(df.nodes, tree)
   df.nodes <- fill_nodes_part(df.nodes)
   df.nodes <- fill_nodes_depth(df.nodes, tree)
   df.nodes <- fill_nodes_colless(df.nodes, tree)
@@ -343,11 +344,12 @@ fill_edges_is.ext <- function(df.edges, df.nodes){
 #' Fill the "length" column of the edges data.frame with their length (time). 
 #'
 #' @param df.edges data.frame
+#' @param tree phylo tree
 #'
 #' @return data.frame
 #' @export
 #' @examples
-fill_edges_length <- function(df.edges){
+fill_edges_length <- function(df.edges, tree){
   df.edges["length"] <- tree$edge.length
   return(df.edges)
 }
@@ -382,11 +384,12 @@ fill_edges_part <- function(df.edges, df.nodes){
 #' As time goes, the branch goes from node1 to node2
 #'
 #' @param df.edges data.frame
+#' @param tree phylo tree
 #'
 #' @return data.frame
 #' @export
 #' @examples
-fill_edges_node12 <- function(df.edges){
+fill_edges_node12 <- function(df.edges, tree){
   df.edges[c("node1","node2")] <- tree$edge
   return(df.edges)
 }
@@ -400,15 +403,16 @@ fill_edges_node12 <- function(df.edges){
 #'
 #' @param df.edges data.frame
 #' @param df.nodes data.frame
+#' @param tree phylo tree
 #'
 #' @return data.frame
 #' @export
 #' @examples
-fill_edges_all <- function(df.edges, df.nodes){
+fill_edges_all <- function(df.edges, df.nodes, tree){
   # Fill all the columns of the edges data.frame
   df.edges <- fill_edges_index(df.edges)
-  df.edges <- fill_edges_length(df.edges)
-  df.edges <- fill_edges_node12(df.edges)
+  df.edges <- fill_edges_length(df.edges, tree)
+  df.edges <- fill_edges_node12(df.edges, tree)
   df.edges <- fill_edges_part(df.edges, df.nodes)
   df.edges <- fill_edges_is.ext(df.edges, df.nodes)
   return(df.edges)
@@ -767,7 +771,8 @@ get_ltt_coords <- function(tree){
     bins <- c(bins, 1 + i*step)
   }
   out.ltt.coord <- ltt.coord[bins,]
-  return(out.ltt.coord)
+  coord <- convert_coord_to_list(out.ltt.coord)
+  return(coord)
 }
 
 
@@ -785,7 +790,7 @@ get_ltt_coords <- function(tree){
 #' @examples
 get_ltt_slopes <- function(tree){
   
-  slopes <- list("p.1" = -999, "p.2" = -999, "p.3" = -999, 
+  slopes <- list("slope.1" = -999, "slope.2" = -999, "slope.3" = -999, 
                  "ratio.12" = -999, "ratio.23" = -999)
   
   ltt.coord <- ape::ltt.plot.coords(tree) 
@@ -795,11 +800,11 @@ get_ltt_slopes <- function(tree){
   ltt.df.1 <- ltt.df[ltt.df["time"] < 2*t/3,]
   ltt.df.2 <- ltt.df[ltt.df["time"] <= t/3 & ltt.df["time"] >= 2*t/3,]
   ltt.df.3 <- ltt.df[ltt.df["time"] > t/3,]
-  slopes$p.1  <- lm(N ~ time, ltt.df.1)$coef[[2]]
-  slopes$p.2  <- lm(N ~ time, ltt.df.2)$coef[[2]]
-  slopes$p.3  <- lm(N ~ time, ltt.df.3)$coef[[2]]
-  slopes$ratio.12 <- slopes$p.2 / slopes$p.1
-  slopes$ratio.23 <- slopes$p.3 / slopes$p.2
+  slopes$slope.1  <- lm(N ~ time, ltt.df.1)$coef[[2]]
+  slopes$slope.2  <- lm(N ~ time, ltt.df.2)$coef[[2]]
+  slopes$slope.3  <- lm(N ~ time, ltt.df.3)$coef[[2]]
+  slopes$ratio.12 <- slopes$slope.2 / slopes$slope.1
+  slopes$ratio.23 <- slopes$slope.3 / slopes$slope.2
   return(slopes)
 }
 
@@ -817,12 +822,22 @@ get_ltt_slopes <- function(tree){
 get_all_ss <- function(df.nodes, df.edges, tree){
   ss.bl   <- get_bl_ss(df.edges)                 # branch length ss 
   ss.topo <- get_topo_ss(df.nodes)               # topological ss
-  ss.ltt <- list("coord" = -999, slopes = -999)  # ltt ss
-  ss.ltt$coord <- get_ltt_coords(tree)
-  ss.ltt$slopes <- get_ltt_slopes(tree)
+  ss.ltt.coord <- get_ltt_coords(tree)
+  ss.ltt.slopes <- get_ltt_slopes(tree)
   
-  ss.all <- c(ss.bl, ss.topo, ss.ltt)    # merge all ss in a single list 
+  ss.all <- c(ss.bl, ss.topo, ss.ltt.slopes, ss.ltt.coord)    # merge all ss in a single list 
   return(ss.all)
+}
+
+
+convert_coord_to_list <- function(ltt.coord){
+  l <- list()
+  for (i in 1:40){
+    row <- 1 + (i-1)%%20
+    col <- 1 + (i-1)%/%20
+    l[ltt.names[i]] <- ltt.coord[row, col]
+  }
+  return(l)
 }
 
 
@@ -842,7 +857,7 @@ get_ss <- function(tree){
   
   # Create edges data.frame
   df.edges <- create_edges_data_frame(tree)
-  df.edges <- fill_edges_all(df.edges, df.nodes)
+  df.edges <- fill_edges_all(df.edges, df.nodes, tree)
   
   # Compute all summary statistics 
   ss <- get_all_ss(df.nodes, df.edges, tree)
@@ -853,10 +868,168 @@ get_ss <- function(tree){
 #### end ####
 
 
-ggplot(ltt.df.3, aes(x=time, y=N))+
-  geom_point() + 
-  geom_smooth(method="lm", col="black") + 
-  stat_regline_equation()
+#### Format Summary Statistics #####
+
+
+#' Create the vector containing the summary statistic names
+#'
+#'
+#' @param void 
+#'
+#' @return vector
+#' @export
+#' @examples
+create_ss.names <- function(){
+  ss.names <- c("a.mean", "a.med", "a.var", 
+                "e.mean", "e.med", "e.var", 
+                "i.1.mean", "i.1.med", "i.1.var",
+                "i.2.mean", "i.2.med", "i.2.var",
+                "i.3.mean", "i.3.med", "i.3.var",
+                "ie.1.mean", "ie.1.med", "ie.1.var",
+                "ie.2.mean", "ie.2.med", "ie.2.var",
+                "ie.3.mean", "ie.3.med", "ie.3.var",
+                "height", "colless", "sackin",
+                "wdratio", "deltaw", "max_ladder", 
+                "il_nodes", "stair1", "stair2",
+                "ltt_slope1", "ltt_slope2", "ltt_slope3",
+                "ltt_ratio21", "ltt_ratio32")
+  
+  ltt.names <- c()
+  
+  for (coord in c("t", "N")){
+    for (i in 1:20){
+      new_name <- paste("ltt", coord, i, sep="_")
+      ltt.names <- c(ltt.names, new_name)
+    }
+  }
+  
+  ss.names <- c(ss.names, ltt.names)
+  
+  return(ss.names)
+}
+
+
+#' Create an empty data.frame to store the summary statistics
+#'
+#'
+#' @param ss.names vector of summary statistic names 
+#'
+#' @return data.frame (nrow=0, ncol=length(ss.names))
+#' @export
+#' @examples
+create_ss_dataframe <- function(ss.names){
+  df <- data.frame(matrix(nrow = 0, ncol = length(ss.names)))
+  colnames(df) <- ss.names
+  return(df)
+}
+
+
+#' Add a row to the summary statistics data.frame
+#'
+#' Each row on the data.frame corresponds to the summary of a tree.
+#' In short, one row = one tree, one column = one summary statistics
+#'
+#' @param ss.names vector of summary statistic names 
+#'
+#' @return data.frame (nrow=0, ncol=length(ss.names))
+#' @export
+#' @examples
+add_row <- function(df, ss){
+  ss.val <- unlist(ss, use.names = FALSE)
+  df[nrow(df) + 1, ] <-  ss.val
+  return(df)
+}
+
+
+#' Generate a summary statistics data.frame
+#'
+#' Create and fill a data.frame storing summary statistics of several trees.
+#'
+#' @param n_trees number of trees we want to generate 
+#' @param n_taxa number of taxa of each tree
+#' @param lambda_min minimum speciation rate 
+#' @param lambda_max maximum speciation rate
+#'
+#' @return data.frame (nrow=n_trees, ncol=length(ss.names))
+#' @export
+#' @examples
+generate_ss_dataframe <- function(n_trees, n_taxa, 
+                                  lambda_min, lambda_max){
+  ss.names <- create_ss.names()
+  df <- create_ss_dataframe(ss.names) # initialize the data.frame (empty)
+  lambda_vec <- c()
+  mu_vec <- c()
+  while (nrow(df) < n_trees){
+    print(nrow(df))
+    lambda <- runif(1, lambda_min, lambda_max)
+    mu <- 0.
+    tree <- trees(c(.1, 0), "bd", max.taxa=50)[[1]]
+    ss <- get_ss(tree)
+    if (!any(is.na(ss))){
+      df <- add_row(df, ss)
+      lambda_vec <- c(lambda_vec, lambda)
+      mu_vec <- c(mu_vec, mu)
+      }
+  }
+  df$lambda <- lambda_vec
+  df$mu <- mu_vec
+  return(df)
+} 
+
+
+#### end ####
+
+
+df <- generate_ss_dataframe(3000, 50, 0.1, 0.3)
+
+library(randomForest)
+
+
+model <- randomForest(
+  formula = lambda ~ .,
+  ntree = 500,
+  data = df
+)
+
+model
+
+n_test <- 100
+new <- create_ss_dataframe(ss.names)
+lambda_true <- c()
+for (n in 1:n_test){
+  print(n)
+  lambda <- runif(1, .05, .5)
+  lambda_true <- c(lambda_true, lambda)
+  tree <- trees(c(lambda, 0.), "bd", max.taxa=100)[[1]]
+  ss <- get_ss(tree)
+  new <- add_row(new, ss)
+}
+new$mu <- 0
+
+pred <- predict(model, newdata=new)
+
+lambda_pred <- c()
+lambda_ref <- c()
+for (i in 1:n_test){
+  lambda <- pred[[i]]
+  if (!is.na(lambda)){
+    lambda_pred <- c(lambda_pred, lambda)
+    lambda_ref <-  c(lambda_ref, lambda_true[[i]])
+    }
+}
+
+plot(lambda_ref, lambda_pred)
+abline(0,1)
+
+model_tuned <- tuneRF(
+  x=df[,-1], #define predictor variables
+  y=df$lambda, #define response variable
+  ntreeTry=500,
+  mtryStart=4, 
+  stepFactor=1.5,
+  improve=0.01,
+  trace=FALSE #don't show real-time progress
+)
 
 
 tree <- trees(c(.1, 0), "bd", max.taxa=10)[[1]]
@@ -875,9 +1048,12 @@ for (l in ladders){
 
 df.nodes
 
-get_ss(tree)
+ss <- get_ss(tree)
+ss$coord 
+data.frame("coord" = ss$coord, "x" = 0)
+
 
 df.nodes <- create_nodes_data_frame(tree)
 df.nodes <- fill_nodes_all(df.nodes, tree)
 df.edges <- create_edges_data_frame(tree)
-df.edges <- fill_edges_all(df.edges, df.nodes)
+df.edges <- fill_edges_all(df.edges, df.nodes, tree)

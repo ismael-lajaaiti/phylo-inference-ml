@@ -17,10 +17,16 @@ library(phangorn)
 
 #### Encoding Tree ####
 
-
+#' Check a node of a tree is a tip
+#'
+#'
+#' @param node integer, index of the node
+#' @param tree phylo tree
+#'
+#' @return logical 
+#' @export
+#' @examples
 is_tip <- function(node, tree){
-  # Is the node a tip or not? 
-  # Returns TRUE or FALSE
   if (node==length(tree$tip.label)+1){ # check if node is root 
     bool <- FALSE
   }
@@ -32,10 +38,19 @@ is_tip <- function(node, tree){
 }
 
 
+#' Get the two children of a node
+#'
+#' The left children is always the node the further from the root
+#' The right children is always the node the closest to the root
+#' If the node is a tip returns NA values 
+#'
+#' @param node integer, index of the node
+#' @param tree phylo tree
+#'
+#' @return list, $left = left child, $right = right child
+#' @export
+#' @examples
 get_child <- function(node, tree){
-  # Returns both children of a node 
-  # Left child is the node w/ the higher distance to root 
-  # If the node is a tip returns NA values 
   child <- list("left" = NA, "right" = NA)
   dist.all <- castor::get_all_distances_to_root(tree)
   
@@ -63,11 +78,15 @@ get_child <- function(node, tree){
 }
 
 
+#' Traverse a tree inorder 
+#' 
+#'
+#' @param tree phylo tree
+#'
+#' @return vector, ordered sequence of node indexes of the inorder traversal^
+#' @export
+#' @examples
 traverse_inorder <- function(tree){
-  # Traverse a tree inorder 
-  # The get_child_func can be either:
-  # Left child is always the further from the root
-  # Returns the corresponding sequence of node indexes
   node  <- length(tree$tip.label) + 1 # root index 
   stack <- c()
   inorder <- c()
@@ -87,9 +106,22 @@ traverse_inorder <- function(tree){
 }
 
 
+#' Compute all the distances of tips to their most recent ancestor 
+#'
+#' For each node, 
+#' 1. find its parent (most recent ancestor)
+#' 2. compute the distance between the node and its parent 
+#' This distance is only computed for tips, as we don't need this distance 
+#' for the internal nodes in the encoding. 
+#' Thus internal node indexes are filled with NA 
+#' See Voznica 2021 - bioRxiv - DOI:10.1101/2021.03.11.435006 
+#'
+#' @param tree phylo tree
+#'
+#' @return vector of distance 
+#' @export
+#' @examples
 get_all_distances_to_ancestor <- function(tree){
-  # Returns for the distance to the recent ancestor for all tips 
-  # the value for internal nodes is set to NA (not needed for the encoding)
   n <- length(tree$orig$idx) + 1 
   n_node <- tree$Nnode
   n_tip <- n - n_node
@@ -113,11 +145,18 @@ get_all_distances_to_ancestor <- function(tree){
   return(dist)
 }
 
-#' @author qsdf
-#' @param tree an object
-#' @details This is the encoding fro
-#' @return Returns the compact vector of a given phylogenetic tree
-#' 
+#' Encode a phylogenetic tree into a vector 
+#'
+#' Compute the compact encoding of a phylogenetic tree. This encoding is
+#' bijective. The encoding methods is named: "Compact Bijective Ladderized 
+#' Vector" (CBLV).
+#' See Voznica 2021 - bioRxiv - DOI:10.1101/2021.03.11.435006
+#'
+#' @param tree phylo tree to encode 
+#'
+#' @return vector containing the encoding
+#' @export
+#' @examples
 encode_phylo <- function(tree){
   # 
   # A list for nodes containing their distances to the root 
