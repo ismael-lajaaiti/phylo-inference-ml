@@ -790,21 +790,24 @@ get_ltt_coords <- function(tree){
 #' @examples
 get_ltt_slopes <- function(tree){
   
-  slopes <- list("slope.1" = -999, "slope.2" = -999, "slope.3" = -999, 
-                 "ratio.12" = -999, "ratio.23" = -999)
+  slopes <- list("slope.1" = NA, "slope.2" = NA, "slope.3" = NA, 
+                 "ratio.12" = NA, "ratio.23" = NA)
   
   ltt.coord <- ape::ltt.plot.coords(tree) 
   ltt.df <- as.data.frame(ltt.coord)
   ltt.df["N"] <- log(ltt.df["N"])
-  t <- ltt.df$time[1] # root time 
-  ltt.df.1 <- ltt.df[ltt.df["time"] < 2*t/3,]
-  ltt.df.2 <- ltt.df[ltt.df["time"] <= t/3 & ltt.df["time"] >= 2*t/3,]
-  ltt.df.3 <- ltt.df[ltt.df["time"] > t/3,]
-  slopes$slope.1  <- lm(N ~ time, ltt.df.1)$coef[[2]]
-  slopes$slope.2  <- lm(N ~ time, ltt.df.2)$coef[[2]]
-  slopes$slope.3  <- lm(N ~ time, ltt.df.3)$coef[[2]]
-  slopes$ratio.12 <- slopes$slope.2 / slopes$slope.1
-  slopes$ratio.23 <- slopes$slope.3 / slopes$slope.2
+  if (!any(is.na(ltt.df["N"])) & !any(is.na(ltt.df["time"]))){
+    t <- ltt.df$time[1] # root time 
+    ltt.df.1 <- ltt.df[ltt.df["time"] < 2*t/3,]
+    ltt.df.2 <- ltt.df[ltt.df["time"] <= t/3 & ltt.df["time"] >= 2*t/3,]
+    ltt.df.3 <- ltt.df[ltt.df["time"] > t/3,]
+    slopes$slope.1  <- lm(N ~ time, ltt.df.1)$coef[[2]]
+    slopes$slope.2  <- lm(N ~ time, ltt.df.2)$coef[[2]]
+    slopes$slope.3  <- lm(N ~ time, ltt.df.3)$coef[[2]]
+    slopes$ratio.12 <- slopes$slope.2 / slopes$slope.1
+    slopes$ratio.23 <- slopes$slope.3 / slopes$slope.2
+  }
+  else{print("Error: NA values in ltt coord.")}
   return(slopes)
 }
 
@@ -830,9 +833,18 @@ get_all_ss <- function(df.nodes, df.edges, tree){
 }
 
 
+#' Convert the matrix of LTT coordinates into a list
+#'
+#'
+#' @param ltt.coord matrix containing LTT coordinates 
+#'
+#' @return list (of LTT coordinates)
+#' @export
+#' @examples
 convert_coord_to_list <- function(ltt.coord){
-  l <- list()
-  for (i in 1:40){
+  l <- list() # initialize the list 
+  ltt.names <- create_ltt.names() # get the names of the LTT coord.
+  for (i in 1:40){ # 40 coordinates (20 for x coord. + 20 for y coord)
     row <- 1 + (i-1)%%20
     col <- 1 + (i-1)%/%20
     l[ltt.names[i]] <- ltt.coord[row, col]
@@ -871,6 +883,26 @@ get_ss <- function(tree){
 #### Format Summary Statistics #####
 
 
+#' Create the vector containing the ltt statistic names
+#'
+#'
+#' @param void 
+#'
+#' @return vector
+#' @export
+#' @examples
+create_ltt.names <- function(){
+  ltt.names <- c() # initialize vector 
+  for (coord in c("t", "N")){ # x & y coordinates 
+    for (i in 1:20){ # 20 points for each
+      new_name <- paste("ltt", coord, i, sep="_")
+      ltt.names <- c(ltt.names, new_name)
+    }
+  }
+  return(ltt.names)
+}
+
+
 #' Create the vector containing the summary statistic names
 #'
 #'
@@ -894,15 +926,7 @@ create_ss.names <- function(){
                 "ltt_slope1", "ltt_slope2", "ltt_slope3",
                 "ltt_ratio21", "ltt_ratio32")
   
-  ltt.names <- c()
-  
-  for (coord in c("t", "N")){
-    for (i in 1:20){
-      new_name <- paste("ltt", coord, i, sep="_")
-      ltt.names <- c(ltt.names, new_name)
-    }
-  }
-  
+  ltt.names <- create_ltt.names()
   ss.names <- c(ss.names, ltt.names)
   
   return(ss.names)
@@ -949,30 +973,39 @@ add_row <- function(df, ss){
 #' @param n_taxa number of taxa of each tree
 #' @param lambda_min minimum speciation rate 
 #' @param lambda_max maximum speciation rate
+#' @param mu_min minimum extinction rate 
+#' @param mu_max maximum extinction rate
 #'
 #' @return data.frame (nrow=n_trees, ncol=length(ss.names))
 #' @export
 #' @examples
 generate_ss_dataframe <- function(n_trees, n_taxa, 
-                                  lambda_min, lambda_max){
+                                  lambda_min, lambda_max, 
+                                  mu_min, mu_max){
   ss.names <- create_ss.names()
   df <- create_ss_dataframe(ss.names) # initialize the data.frame (empty)
   lambda_vec <- c()
   mu_vec <- c()
+  r_vec <- c()
+  epsilon_vec <- c()
   while (nrow(df) < n_trees){
     print(nrow(df))
-    lambda <- runif(1, lambda_min, lambda_max)
-    mu <- 0.
-    tree <- trees(c(.1, 0), "bd", max.taxa=50)[[1]]
-    ss <- get_ss(tree)
+    lambda <- runif(1, lambda_min, lambda_max) # generate a random spec. rate
+    mu <- runif(1, mu_min, mu_max) # same w/ ext. rate 
+    tree <- trees(c(lambda, 0), "bd", max.taxa=n_taxa)[[1]] # create tree (BD)
+    ss <- get_ss(tree) # compute summary statistics 
     if (!any(is.na(ss))){
       df <- add_row(df, ss)
       lambda_vec <- c(lambda_vec, lambda)
       mu_vec <- c(mu_vec, mu)
+      r_vec <- c(r_vec, lambda - mu)
+      epsilon_vec <- c(epsilon_vec, mu/lambda)
       }
   }
   df$lambda <- lambda_vec
   df$mu <- mu_vec
+  df$r <- r_vec
+  df$epsilon <- epsilon_vec
   return(df)
 } 
 
@@ -980,80 +1013,113 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
 #### end ####
 
 
-df <- generate_ss_dataframe(3000, 50, 0.1, 0.3)
-
-library(randomForest)
-
-
-model <- randomForest(
-  formula = lambda ~ .,
-  ntree = 500,
-  data = df
-)
-
-model
-
-n_test <- 100
-new <- create_ss_dataframe(ss.names)
-lambda_true <- c()
-for (n in 1:n_test){
-  print(n)
-  lambda <- runif(1, .05, .5)
-  lambda_true <- c(lambda_true, lambda)
-  tree <- trees(c(lambda, 0.), "bd", max.taxa=100)[[1]]
+if (!interactive()){
+  
+  df_train <- generate_ss_dataframe(1000, 100, 0.1, 0.2, 0.02, 0.06)
+  df_test <- generate_ss_dataframe(100, 100, 0.1, 0.2, 0.02, 0.06)
+  
+  library(randomForest)
+  
+  model.lambda <- randomForest(
+    formula = lambda ~ .- mu - espilon - r,
+    ntree = 500,
+    data = df_train
+  )
+  model.lambda
+  
+  model.mu <- randomForest(
+    formula = mu ~ .- lambda - epsilon - r,
+    ntree = 500,
+    data = df_train
+  )
+  model.mu
+  
+  model.r <- randomForest(
+    formula = r ~ .- epsilon - lambda - mu,
+    ntree = 500,
+    data = df_train
+  )
+  model.r
+  
+  model.epsilon <- randomForest(
+    formula = epsilon ~ .- r - lambda - mu,
+    ntree = 500,
+    data = df_train
+  )
+  model.r$importance
+  
+  pred.lambda <- predict(model.lambda, newdata=df_test)
+  pred.mu <- predict(model.mu, newdata=df_test)
+  pred.r <- predict(model.r, newdata=df_test)
+  pred.epsilon <- predict(model.epsilon, newdata=df_test)
+  
+  
+  par(mfrow=c(2,2))
+  plot(df_test$lambda, pred.lambda)
+  abline(0,1)
+  plot(df_test$mu, pred.mu)
+  abline(0,1)
+  plot(df_test$r, pred.r)
+  abline(0,1)
+  plot(df_test$epsilon, pred.epsilon)
+  abline(0,1)
+  
+  model.mu$importance
+  
+  model_tuned <- tuneRF(
+    x=df[,-1], #define predictor variables
+    y=df$lambda, #define response variable
+    ntreeTry=500,
+    mtryStart=4, 
+    stepFactor=1.5,
+    improve=0.01,
+    trace=FALSE #don't show real-time progress
+  )
+  
+  
+  tree <- trees(c(.1, 0), "bd", max.taxa=50)[[1]]
+  plot(tree)
+  nodelabels()
+  tiplabels()
+  
+  tree$orig
+  
+  lambda_vec <- c()
+  height_vec <- c()
+  
+  for (i in 1:300){
+    lambda <- runif(1, 0.01, 0.5)
+    lambda_vec <- c(lambda_vec, lambda)
+    tree <- trees(c(lambda, 0), "bd", max.taxa=50)[[1]]
+    df.nodes <- create_nodes_data_frame(tree)
+    df.nodes <- fill_nodes_all(df.nodes, tree)
+    height <- get_height(df.nodes)
+    #height <- max(castor::get_all_distances_to_root(tree))
+    height_vec <- c(height_vec, height)
+  }
+  
+  plot
+  
+  root <- length(tree$tip.label) + 1 
+  traverse_ladder <- traverse_ladder(tree, root, c())
+  ladders <- get_ladders(traverse_ladder)
+  for (l in ladders){
+    print(length(l))
+  }
+  
+  
+  df.nodes
+  
   ss <- get_ss(tree)
-  new <- add_row(new, ss)
-}
-new$mu <- 0
-
-pred <- predict(model, newdata=new)
-
-lambda_pred <- c()
-lambda_ref <- c()
-for (i in 1:n_test){
-  lambda <- pred[[i]]
-  if (!is.na(lambda)){
-    lambda_pred <- c(lambda_pred, lambda)
-    lambda_ref <-  c(lambda_ref, lambda_true[[i]])
-    }
-}
-
-plot(lambda_ref, lambda_pred)
-abline(0,1)
-
-model_tuned <- tuneRF(
-  x=df[,-1], #define predictor variables
-  y=df$lambda, #define response variable
-  ntreeTry=500,
-  mtryStart=4, 
-  stepFactor=1.5,
-  improve=0.01,
-  trace=FALSE #don't show real-time progress
-)
-
-
-tree <- trees(c(.1, 0), "bd", max.taxa=10)[[1]]
-plot(tree)
-nodelabels()
-tiplabels()
-
-root <- length(tree$tip.label) + 1 
-traverse_ladder <- traverse_ladder(tree, root, c())
-ladders <- get_ladders(traverse_ladder)
-for (l in ladders){
-  print(length(l))
+  ss$coord 
+  data.frame("coord" = ss$coord, "x" = 0)
+  
+  
+  df.nodes <- create_nodes_data_frame(tree)
+  df.nodes <- fill_nodes_all(df.nodes, tree)
+  df.edges <- create_edges_data_frame(tree)
+  df.edges <- fill_edges_all(df.edges, df.nodes, tree)
+  
 }
 
 
-
-df.nodes
-
-ss <- get_ss(tree)
-ss$coord 
-data.frame("coord" = ss$coord, "x" = 0)
-
-
-df.nodes <- create_nodes_data_frame(tree)
-df.nodes <- fill_nodes_all(df.nodes, tree)
-df.edges <- create_edges_data_frame(tree)
-df.edges <- fill_edges_all(df.edges, df.nodes, tree)

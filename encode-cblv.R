@@ -181,11 +181,14 @@ encode_phylo <- function(tree){
 
 #### end ####
 
+if (!interactive()){
+  tree <- trees(c(.1, 0), "bd", max.taxa=10)[[1]]
+  plot(tree, edge.width = 2, label.offset = 0.1, type = "cladogram")
+  nodelabels()
+  tiplabels()
+  
+  traverse_inorder(tree)
+  encode_phylo(tree)
+}
 
-tree <- trees(c(.1, 0), "bd", max.taxa=10)[[1]]
-plot(tree, edge.width = 2, label.offset = 0.1, type = "cladogram")
-nodelabels()
-tiplabels()
 
-traverse_inorder(tree)
-encode_phylo(tree)

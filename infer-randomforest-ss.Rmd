@@ -1,0 +1,118 @@
+---
+title: "Infer Phylogenetic Parameters with RandomForest from Summary Statistics"
+output: html_notebook
+---
+
+
+### Importing librairies & sources 
+
+```{r echo=T}
+library(randomForest)
+source("summary-statistics.R")
+```
+
+
+The idea is to infer the speciation and extinction rates (resp. $\lambda$ and 
+$\mu$) of a phylogenetic tree from its summary statistics (see Saulnier 2017) 
+using a random forest. 
+$\lambda$ and $\mu$ can be inferred directly, or we can infer another related 
+couple of variables: $r = \lambda - \mu$ and $\epsilon = \frac{\mu}{\lambda}$.
+We will see which couple leads to the best prediction. 
+
+To begin we generate a large number of trees in order to train the random forest.
+
+```{r echo = T, results='hide'}
+# Parameters 
+n_trees_train <- 500 # number of trees for the training 
+n_taxa <- 100 # size of the tree 
+lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
+mu_range <- c(0.02, 0.06) # same for mu
+
+# Generate the train set 
+df_train <- generate_ss_dataframe(n_trees_train, n_taxa,
+                                  lambda_range[1], lambda_range[2],
+                                  mu_range[1], mu_range[2])
+```
+
+We generate also a test set, to test the predictions of the random forest. 
+
+```{r echo = T, results='hide'}
+n_trees_test <- 100 # number of trees for test
+# Other parameters remains the same as above 
+
+df_test <- generate_ss_dataframe(n_trees_test, n_taxa,
+                                  lambda_range[1], lambda_range[2],
+                                  mu_range[1], mu_range[2])
+```
+
+Let's see how our training data.frame looks like. It has: 
+
+- 500 rows, one row per tree generated;
+- 82 columns, 78 columns for summary statistics + 4 columns for $\lambda,\mu,r,\epsilon$.
+
+```{r echo=T}
+df_train
+```
+
+Train one random forest per parameter.
+
+```{r}
+
+# Couple 1 - Lambda 
+model.lambda <- randomForest(
+  formula = lambda ~ .- mu - epsilon - r,
+  ntree = 500,
+  data = df_train
+)
+model.lambda
+
+# Couple 1 - Mu
+model.mu <- randomForest(
+  formula = mu ~ .- lambda - epsilon - r,
+  ntree = 500,
+  data = df_train
+)
+model.mu
+
+# Couple 2 - R
+model.r <- randomForest(
+  formula = r ~ .- epsilon - lambda - mu,
+  ntree = 500,
+  data = df_train
+)
+model.r
+
+# Couple 2 - Epsilon
+model.epsilon <- randomForest(
+  formula = epsilon ~ .- r - lambda - mu,
+  ntree = 500,
+  data = df_train
+)
+model.epsilon
+```
+Make prediction on the test set for each random forest (*i.e.* each parameter). 
+
+```{r}
+pred.lambda <- predict(model.lambda, newdata=df_test)
+pred.mu <- predict(model.mu, newdata=df_test)
+pred.r <- predict(model.r, newdata=df_test)
+pred.epsilon <- predict(model.epsilon, newdata=df_test)
+```
+
+```{r echo=F}
+par(mfrow=c(2,2))
+plot(df_test$lambda, pred.lambda)
+abline(0,1)
+plot(df_test$mu, pred.mu)
+abline(0,1)
+plot(df_test$r, pred.r)
+abline(0,1)
+plot(df_test$epsilon, pred.epsilon)
+abline(0,1)
+```
+In each random forest the importance of the differenct predictors (summary 
+statistics here) can be investigated as follow: 
+
+```{r}
+model.lambda$importance
+```
