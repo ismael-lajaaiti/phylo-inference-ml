@@ -1,0 +1,178 @@
+---
+title: "Infer Phylogenetic Parameters with DNN from Summary Statistics"
+output: html_document
+---
+
+### Libraries and Sources 
+
+```{r}
+library(torch)
+library(luz)
+library(ggplot2)
+source("summary-statistics.R")
+```
+
+
+Generate the data.frame containing the summary statistics of the trees (inputs) and 
+the phylogenetic parameters ($(\lambda,\mu);(r,\varepsilon)$; targets).
+
+```{r results='hide', echo=T}
+# Parameters 
+n_trees_train <- 1000 # total number of trees (train + test)
+n_taxa <- 100 # size of the trees
+lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
+mu_range <- c(0.02, 0.06) # same for mu
+
+# Generate the data.frame
+df <- generate_ss_dataframe(n_trees_train, n_taxa,
+                            lambda_range[1], lambda_range[2],
+                            mu_range[1], mu_range[2])
+```
+## $(r, \varepsilon)$
+
+Prepare the training and test set 
+```{r}
+ds <- convert_dataframe_to_dataset(df)
+
+n_train <- as.integer(0.9*nrow(df))
+train_indices <- sample(1:nrow(df), n_train) # 90% of data used for training 
+test_indices <- setdiff(1:nrow(df), train_indices) # remaining 10% to test
+train_ds <- ds(df[train_indices, ], direct_target=FALSE)
+test_ds  <- ds(df[test_indices, ] , direct_target=FALSE)
+  
+train_dl <- train_ds %>% dataloader(batch_size=16, shuffle=TRUE)
+test_dl  <- test_ds  %>% dataloader(batch_size=16, shuffle=FALSE)
+```
+
+
+Create the DNN 
+```{r}
+net <- nn_module(
+    
+    "ss-dnn", 
+    
+    initialize = function(){
+      self$fc1 <- nn_linear(in_features = 78, out_features = 78)
+      self$fc2 <- nn_linear(in_features = 78, out_features = 78)
+      self$fc3 <- nn_linear(in_features = 78, out_features = 2)
+    }, 
+    
+    forward = function(x){
+      x %>%
+        self$fc1() %>%
+        nnf_relu() %>%
+        
+        self$fc2() %>%
+        nnf_relu() %>%
+        
+        self$fc3()
+    }
+  )
+```
+
+Train the DNN
+```{r echo=T, results='hide'}
+fitted <- net %>%
+    setup(
+      loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
+      optimizer = optim_adam
+    ) %>%
+    fit(train_dl, epochs = 30, valid_data = test_dl)
+```
+
+Get the predictions 
+
+```{r}
+preds <- predict(fitted, test_dl)
+preds.r <- as.matrix(preds)[,1]
+preds.epsilon <- as.matrix(preds)[,2]
+test_dl <- dataloader(test_ds, batch_size = 0.1*nrow(df))
+targets <- (test_dl %>% dataloader_make_iter() %>% dataloader_next())$y %>% 
+  as.matrix()
+targets.r <- targets[,1]
+targets.epsilon <- targets[,2]
+```
+Plot
+```{r}
+par(mfrow=c(1,2))
+plot(targets.r, preds.r)
+abline(0,1)
+plot(targets.epsilon, preds.epsilon)
+abline(0,1)
+```
+
+## $(\lambda, \mu)$
+
+Create train and test sets.
+```{r}
+train_ds2 <- ds(df[train_indices, ], direct_target=TRUE)
+test_ds2  <- ds(df[test_indices, ] , direct_target=TRUE)
+  
+train_dl2 <- train_ds2 %>% dataloader(batch_size=16, shuffle=TRUE)
+test_dl2  <- test_ds2  %>% dataloader(batch_size=16, shuffle=FALSE)
+```
+
+Create the network.
+```{r}
+net2 <- nn_module(
+    
+    "ss-dnn", 
+    
+    initialize = function(){
+      self$fc1 <- nn_linear(in_features = 78, out_features = 78)
+      self$fc2 <- nn_linear(in_features = 78, out_features = 78)
+      self$fc3 <- nn_linear(in_features = 78, out_features = 2)
+    }, 
+    
+    forward = function(x){
+      x %>%
+        self$fc1() %>%
+        nnf_relu() %>%
+        
+        self$fc2() %>%
+        nnf_relu() %>%
+        
+        self$fc3()
+    }
+  )
+```
+
+Train the network.
+```{r echo=T, results='hide'}
+fitted <- net2 %>%
+    setup(
+      loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
+      optimizer = optim_adam
+    ) %>%
+    fit(train_dl2, epochs = 30, valid_data = test_dl2)
+```
+
+Get the predictions.
+```{r}
+preds <- predict(fitted, test_dl2)
+preds.lambda <- as.matrix(preds)[,1]
+preds.mu <- as.matrix(preds)[,2]
+test_dl2 <- dataloader(test_ds2, batch_size = 0.1*nrow(df))
+targets <- (test_dl2 %>% dataloader_make_iter() %>% dataloader_next())$y %>% 
+  as.matrix()
+targets.lambda <- targets[,1]
+targets.mu <- targets[,2]
+```
+
+Plot and compare to previous.
+```{r}
+par(mfrow=c(2,2))
+plot(targets.lambda, preds.lambda)
+abline(0,1)
+plot(targets.mu, preds.mu)
+abline(0,1)
+plot(targets.r, preds.r)
+abline(0,1)
+plot(targets.epsilon, preds.epsilon)
+abline(0,1)
+```
+
+
+
+
+

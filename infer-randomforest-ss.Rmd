@@ -110,7 +110,7 @@ abline(0,1)
 plot(df_test$epsilon, pred.epsilon)
 abline(0,1)
 ```
-In each random forest the importance of the differenct predictors (summary 
+In each random forest the importance of the different predictors (summary 
 statistics here) can be investigated as follow: 
 
 ```{r}

@@ -653,11 +653,12 @@ get_il_nodes <- function(tree){
 #' on the right size and on the left size 
 #'
 #' @param df.nodes data.frame
+#' @param tree phylo tree
 #'
 #' @return numeric
 #' @export
 #' @examples
-get_staircaseness1 <- function(df.nodes){
+get_staircaseness1 <- function(df.nodes, tree){
   n <- length(tree$orig$idx) + 1 
   n_tips <- length(tree$tip.label)
   n_nodes <- n - n_tips
@@ -672,12 +673,13 @@ get_staircaseness1 <- function(df.nodes){
 #' tree topology 
 #'
 #' @param df.nodes data.frame
+#' @param tree phylo tree
 #'
 #' @return list (of topological summary statistics)
 #' 
 #' @export
 #' @examples
-get_topo_ss <- function(df.nodes){
+get_topo_ss <- function(df.nodes, tree){
 
   ss.topo <- list("height"  = -999, "colless" = -999, "sackin"     = -999, 
                   "wdratio" = -999, "deltaw"  = -999, "max_ladder" = -999,
@@ -690,7 +692,7 @@ get_topo_ss <- function(df.nodes){
   ss.topo$deltaw     <- get_deltaw(df.nodes)
   ss.topo$max_ladder <- get_max_ladder(tree)
   ss.topo$il_nodes   <- get_il_nodes(tree)
-  ss.topo$stair1     <- get_staircaseness1(df.nodes) 
+  ss.topo$stair1     <- get_staircaseness1(df.nodes, tree) 
   ss.topo$stair2     <- sum(df.nodes$stair, na.rm = TRUE)
   return(ss.topo)
 }
@@ -824,7 +826,7 @@ get_ltt_slopes <- function(tree){
 #' @examples
 get_all_ss <- function(df.nodes, df.edges, tree){
   ss.bl   <- get_bl_ss(df.edges)                 # branch length ss 
-  ss.topo <- get_topo_ss(df.nodes)               # topological ss
+  ss.topo <- get_topo_ss(df.nodes, tree)         # topological ss
   ss.ltt.coord <- get_ltt_coords(tree)
   ss.ltt.slopes <- get_ltt_slopes(tree)
   
@@ -1007,74 +1009,62 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
   df$r <- r_vec
   df$epsilon <- epsilon_vec
   return(df)
-} 
+}
+
+
+#' Convert a data.frame to a torch::dataset 
+#'
+#'
+#' @param df data.frame to convert 
+#' @param direct_target logical (default=FALSE)
+#' If TRUE, targets are (lambda, mu)
+#' If FALSE, targers are (r=lambda-mu, epsilon=mu/lambda)
+#'
+#' @return torch::dataset()
+#' @export
+#' @examples
+convert_dataframe_to_dataset <- function(df, direct_target=FALSE){
+  
+  ss_dataset <- torch::dataset(
+    
+    name <- "summary_statistics_dataset", 
+    
+    initialize = function(df, direct_target){
+
+      dataframe <- na.omit(df) # delete NA
+      
+      # input data 
+      ss.names <- create_ss.names()
+      x = df[ss.names] %>% 
+        as.matrix()
+      self$x <- torch_tensor(x)
+      
+      # target data 
+      if (direct_target){target.names <- c("lambda", "mu")}
+      else {target.names <- c("r", "epsilon")}
+      y = df[target.names] %>% 
+        as.matrix()
+      self$y <- torch_tensor(y)
+  
+    }, 
+    
+    .getitem = function(i) {
+      list(x = self$x[i, ], y = self$y[i, ])
+    }, 
+    
+    .length = function() {
+      self$y$size()[[1]]
+    }
+    
+  )
+  return(ss_dataset)
+}
 
 
 #### end ####
 
 
-if (!interactive()){
-  
-  df_train <- generate_ss_dataframe(1000, 100, 0.1, 0.2, 0.02, 0.06)
-  df_test <- generate_ss_dataframe(100, 100, 0.1, 0.2, 0.02, 0.06)
-  
-  library(randomForest)
-  
-  model.lambda <- randomForest(
-    formula = lambda ~ .- mu - espilon - r,
-    ntree = 500,
-    data = df_train
-  )
-  model.lambda
-  
-  model.mu <- randomForest(
-    formula = mu ~ .- lambda - epsilon - r,
-    ntree = 500,
-    data = df_train
-  )
-  model.mu
-  
-  model.r <- randomForest(
-    formula = r ~ .- epsilon - lambda - mu,
-    ntree = 500,
-    data = df_train
-  )
-  model.r
-  
-  model.epsilon <- randomForest(
-    formula = epsilon ~ .- r - lambda - mu,
-    ntree = 500,
-    data = df_train
-  )
-  model.r$importance
-  
-  pred.lambda <- predict(model.lambda, newdata=df_test)
-  pred.mu <- predict(model.mu, newdata=df_test)
-  pred.r <- predict(model.r, newdata=df_test)
-  pred.epsilon <- predict(model.epsilon, newdata=df_test)
-  
-  
-  par(mfrow=c(2,2))
-  plot(df_test$lambda, pred.lambda)
-  abline(0,1)
-  plot(df_test$mu, pred.mu)
-  abline(0,1)
-  plot(df_test$r, pred.r)
-  abline(0,1)
-  plot(df_test$epsilon, pred.epsilon)
-  abline(0,1)
-  
-  model.mu$importance
-  
-  model_tuned <- tuneRF(
-    x=df[,-1], #define predictor variables
-    y=df$lambda, #define response variable
-    ntreeTry=500,
-    mtryStart=4, 
-    stepFactor=1.5,
-    improve=0.01,
-    trace=FALSE #don't show real-time progress
-  )
+if (FALSE){ # don't execute the following when imported with 'source'
   
   
   tree <- trees(c(.1, 0), "bd", max.taxa=50)[[1]]

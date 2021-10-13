@@ -181,7 +181,7 @@ encode_phylo <- function(tree){
 
 #### end ####
 
-if (!interactive()){
+if (FALSE){
   tree <- trees(c(.1, 0), "bd", max.taxa=10)[[1]]
   plot(tree, edge.width = 2, label.offset = 0.1, type = "cladogram")
   nodelabels()
