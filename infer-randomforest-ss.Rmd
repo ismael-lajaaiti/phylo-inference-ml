@@ -8,6 +8,7 @@ output: html_notebook
 
 ```{r echo=T}
 library(randomForest)
+library(MLmetrics)
 source("summary-statistics.R")
 ```
 
@@ -23,7 +24,7 @@ To begin we generate a large number of trees in order to train the random forest
 
 ```{r echo = T, results='hide'}
 # Parameters 
-n_trees_train <- 500 # number of trees for the training 
+n_trees_train <- 1000 # number of trees for the training 
 n_taxa <- 100 # size of the tree 
 lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
 mu_range <- c(0.02, 0.06) # same for mu
@@ -37,7 +38,7 @@ df_train <- generate_ss_dataframe(n_trees_train, n_taxa,
 We generate also a test set, to test the predictions of the random forest. 
 
 ```{r echo = T, results='hide'}
-n_trees_test <- 100 # number of trees for test
+n_trees_test <- 200 # number of trees for test
 # Other parameters remains the same as above 
 
 df_test <- generate_ss_dataframe(n_trees_test, n_taxa,
@@ -100,16 +101,33 @@ pred.epsilon <- predict(model.epsilon, newdata=df_test)
 ```
 
 ```{r echo=F}
+
+preds <- list(pred.lambda, pred.mu, pred.r, pred.epsilon)
+valid <- list(df_test$lambda, df_test$mu, df_test$r, df_test$epsilon)
+names <- list("lambda -", "mu -", "r -", "epsilon -")
+
 par(mfrow=c(2,2))
-plot(df_test$lambda, pred.lambda)
-abline(0,1)
-plot(df_test$mu, pred.mu)
-abline(0,1)
-plot(df_test$r, pred.r)
-abline(0,1)
-plot(df_test$epsilon, pred.epsilon)
-abline(0,1)
+
+for (i in 1:4){
+  pred <- preds[[i]]
+  true <- valid[[i]]
+  r2.lambda <- R2_Score(pred, true)
+  r2.lambda <- format(round(r2.lambda, 3), nsmall = 3)
+  plot(true, pred, main=paste(names[[i]], "r2 =", r2.lambda, sep=" "))
+  abline(0,1)
+}
 ```
+
+Quantify the error (MSE)
+
+```{r}
+sqrt(mean((pred.lambda - df_test$lambda)^2)/mean(df_test$lambda))
+sqrt(mean((pred.mu - df_test$mu)^2)/mean(df_test$mu))
+sqrt(mean((pred.epsilon - df_test$epsilon)^2))
+R2_Score(pred.epsilon,df_test$epsilon)
+```
+
+
 In each random forest the importance of the different predictors (summary 
 statistics here) can be investigated as follow: 
 

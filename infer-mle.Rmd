@@ -1,0 +1,72 @@
+---
+title: "Infer Phylogenetic Parameters with Maximum Likelihood Estimator"
+output: html_notebook
+---
+
+
+### Importing libraries 
+
+```{r}
+library(ape)
+library(diversitree)
+library(MLmetrics)
+```
+
+
+## Birth-Death Model ($\lambda , \mu \geq 0$)
+
+```{r}
+
+# Parameters  
+n_test <- 200 # number of trees for the the validation
+n_taxa <- 100 # size of the tree 
+lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
+mu_range <- c(0.02, 0.06) # same for mu
+
+# Store output data 
+out <- data.frame(lambda      = rep(NA,0), mu     = rep(NA,0),
+                  epsilon     = rep(NA,0), r      = rep(NA,0),
+                  lambda.mle  = rep(NA,0), mu.mle = rep(NA,0),
+                  epsilon.mle = rep(NA,0), r.mle  = rep(NA,0)) 
+
+while (nrow(out) < n_test){
+  # Generate random parameters
+  lambda  <- runif(1, lambda_range[1], lambda_range[2])
+  mu      <- runif(1, mu_range[1]    , mu_range[2]) 
+  r       <- lambda - mu
+  epsilon <- mu / lambda 
+  
+  # Generate random tree (w/ birth-death model)
+  tree <- trees(c(lambda, mu), "bd", max.taxa=n_taxa)[[1]]
+  
+  # Infer parameters 
+  lik <- make.bd(tree)
+  fit1 <- find.mle(lik, c(.1, .1)) # lambda & mu estimates 
+  fit2 <- birthdeath(tree) # r & epsilon estimates 
+
+  # Save the parameters
+  if (fit1$code < 3){ # if model converges
+    out[nrow(out)+1,] <- c(lambda, mu, epsilon, r, fit1$par, fit2$para)
+  }
+  #else {print(lambda)}
+}
+```
+
+
+```{r}
+
+names <- list("lambda", "mu", "r", "epsilon")
+
+par(mfrow=c(2,2))
+
+for (i in 1:4){
+  pred.name <- paste(names[[i]], ".mle", sep="")
+  pred <- out[, pred.name]
+  true <- out[, names[[i]]]
+  r2.lambda <- R2_Score(pred, true)
+  r2.lambda <- format(round(r2.lambda, 3), nsmall = 3)
+  plot(true, pred, main=paste(names[[i]], "- r2 =", r2.lambda, sep=" "))
+  abline(0, 1)
+}
+```
+

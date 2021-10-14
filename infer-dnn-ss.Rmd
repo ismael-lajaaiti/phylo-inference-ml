@@ -10,6 +10,7 @@ library(torch)
 library(luz)
 library(ggplot2)
 source("summary-statistics.R")
+source("neural-network-functions.R")
 ```
 
 
@@ -17,37 +18,47 @@ Generate the data.frame containing the summary statistics of the trees (inputs) 
 the phylogenetic parameters ($(\lambda,\mu);(r,\varepsilon)$; targets).
 
 ```{r results='hide', echo=T}
-# Parameters 
-n_trees_train <- 1000 # total number of trees (train + test)
+# Parameters of phylogenetic trees
+n_trees <- 1200 # total number of trees (train + test)
 n_taxa <- 100 # size of the trees
 lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
 mu_range <- c(0.02, 0.06) # same for mu
 
 # Generate the data.frame
-df <- generate_ss_dataframe(n_trees_train, n_taxa,
+df <- generate_ss_dataframe(n_trees, n_taxa,
                             lambda_range[1], lambda_range[2],
                             mu_range[1], mu_range[2])
 ```
+
+
 ## $(r, \varepsilon)$
 
-Prepare the training and test set 
-```{r}
-ds <- convert_dataframe_to_dataset(df)
 
-n_train <- as.integer(0.9*nrow(df))
-train_indices <- sample(1:nrow(df), n_train) # 90% of data used for training 
-test_indices <- setdiff(1:nrow(df), train_indices) # remaining 10% to test
+Prepare the training and test set 
+
+```{r}
+# Parameters of the NN's training
+n_train <- 1000
+batch_size <- 64
+n_epochs <- 50
+
+# Creation of the test and train dataset
+ds <- convert_dataframe_to_dataset(df)
+train_indices <- sample(1:nrow(df), n_train) 
+test_indices <- setdiff(1:nrow(df), train_indices) 
 train_ds <- ds(df[train_indices, ], direct_target=FALSE)
 test_ds  <- ds(df[test_indices, ] , direct_target=FALSE)
   
-train_dl <- train_ds %>% dataloader(batch_size=16, shuffle=TRUE)
-test_dl  <- test_ds  %>% dataloader(batch_size=16, shuffle=FALSE)
+# Creation of the dataloader 
+train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
+test_dl  <- test_ds  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 ```
 
 
 Create the DNN 
+
 ```{r}
-net <- nn_module(
+net1 <- nn_module(
     
     "ss-dnn", 
     
@@ -70,35 +81,33 @@ net <- nn_module(
   )
 ```
 
+
 Train the DNN
+
 ```{r echo=T, results='hide'}
-fitted <- net %>%
+net1.fit <- net %>%
     setup(
       loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
       optimizer = optim_adam
     ) %>%
-    fit(train_dl, epochs = 30, valid_data = test_dl)
+    fit(train_dl, epochs = n_epochs, valid_data = test_dl)
+```
+
+```{r}
+plot_loss_records(net.fit, n_epochs)
 ```
 
 Get the predictions 
 
 ```{r}
-preds <- predict(fitted, test_dl)
+preds <- predict(net1.fit, test_dl)
 preds.r <- as.matrix(preds)[,1]
 preds.epsilon <- as.matrix(preds)[,2]
-test_dl <- dataloader(test_ds, batch_size = 0.1*nrow(df))
+test_dl <- dataloader(test_ds, batch_size = n_trees - n_train)
 targets <- (test_dl %>% dataloader_make_iter() %>% dataloader_next())$y %>% 
   as.matrix()
 targets.r <- targets[,1]
 targets.epsilon <- targets[,2]
-```
-Plot
-```{r}
-par(mfrow=c(1,2))
-plot(targets.r, preds.r)
-abline(0,1)
-plot(targets.epsilon, preds.epsilon)
-abline(0,1)
 ```
 
 ## $(\lambda, \mu)$
@@ -108,8 +117,8 @@ Create train and test sets.
 train_ds2 <- ds(df[train_indices, ], direct_target=TRUE)
 test_ds2  <- ds(df[test_indices, ] , direct_target=TRUE)
   
-train_dl2 <- train_ds2 %>% dataloader(batch_size=16, shuffle=TRUE)
-test_dl2  <- test_ds2  %>% dataloader(batch_size=16, shuffle=FALSE)
+train_dl2 <- train_ds2 %>% dataloader(batch_size=batch_size, shuffle=TRUE)
+test_dl2  <- test_ds2  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 ```
 
 Create the network.
@@ -139,20 +148,25 @@ net2 <- nn_module(
 
 Train the network.
 ```{r echo=T, results='hide'}
-fitted <- net2 %>%
+net2.fit <- net2 %>%
     setup(
       loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
       optimizer = optim_adam
     ) %>%
-    fit(train_dl2, epochs = 30, valid_data = test_dl2)
+    fit(train_dl2, epochs = n_epochs, valid_data = test_dl2)
+```
+
+
+```{r}
+plot_loss_records(net2.fit, n_epochs)
 ```
 
 Get the predictions.
 ```{r}
-preds <- predict(fitted, test_dl2)
+preds <- predict(fitted2, test_dl2)
 preds.lambda <- as.matrix(preds)[,1]
 preds.mu <- as.matrix(preds)[,2]
-test_dl2 <- dataloader(test_ds2, batch_size = 0.1*nrow(df))
+test_dl2 <- dataloader(test_ds2, batch_size = n_trees - n_train)
 targets <- (test_dl2 %>% dataloader_make_iter() %>% dataloader_next())$y %>% 
   as.matrix()
 targets.lambda <- targets[,1]
@@ -161,15 +175,23 @@ targets.mu <- targets[,2]
 
 Plot and compare to previous.
 ```{r}
+
+targets.list <- list(targets.lambda, targets.mu, 
+                     targets.r, targets.epsilon)
+preds.list <- list(preds.lambda, preds.mu, preds.r, preds.epsilon)
+names <- list("lambda", "mu", "r", "epsilon")
+
+
 par(mfrow=c(2,2))
-plot(targets.lambda, preds.lambda)
-abline(0,1)
-plot(targets.mu, preds.mu)
-abline(0,1)
-plot(targets.r, preds.r)
-abline(0,1)
-plot(targets.epsilon, preds.epsilon)
-abline(0,1)
+
+for (i in 1:4){
+  pred <- preds.list[[i]]
+  true <- targets.list[[i]]
+  r2.lambda <- R2_Score(pred, true)
+  r2.lambda <- format(round(r2.lambda, 3), nsmall = 3)
+  plot(true, pred, main=paste(names[[i]], "- r2 =", r2.lambda, sep=" "))
+  abline(0,1)
+}
 ```
 
 
