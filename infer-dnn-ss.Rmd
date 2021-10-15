@@ -9,6 +9,7 @@ output: html_document
 library(torch)
 library(luz)
 library(ggplot2)
+library(MLmetrics)
 source("summary-statistics.R")
 source("neural-network-functions.R")
 ```
@@ -19,7 +20,7 @@ the phylogenetic parameters ($(\lambda,\mu);(r,\varepsilon)$; targets).
 
 ```{r results='hide', echo=T}
 # Parameters of phylogenetic trees
-n_trees <- 1200 # total number of trees (train + test)
+n_trees <- 10200 # total number of trees (train + test)
 n_taxa <- 100 # size of the trees
 lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
 mu_range <- c(0.02, 0.06) # same for mu
@@ -38,9 +39,9 @@ Prepare the training and test set
 
 ```{r}
 # Parameters of the NN's training
-n_train <- 1000
+n_train <- 10000
 batch_size <- 64
-n_epochs <- 50
+n_epochs <- 100
 
 # Creation of the test and train dataset
 ds <- convert_dataframe_to_dataset(df)
@@ -65,18 +66,25 @@ net1 <- nn_module(
     initialize = function(){
       self$fc1 <- nn_linear(in_features = 78, out_features = 78)
       self$fc2 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc3 <- nn_linear(in_features = 78, out_features = 2)
+      self$fc3 <- nn_linear(in_features = 78, out_features = 78)
+      self$fc4 <- nn_linear(in_features = 78, out_features = 2)
     }, 
     
     forward = function(x){
       x %>%
         self$fc1() %>%
         nnf_relu() %>%
+        nnf_dropout(p = .01) %>%
         
         self$fc2() %>%
         nnf_relu() %>%
+        nnf_dropout(p = .01) %>%
         
-        self$fc3()
+        self$fc3() %>%
+        nnf_relu() %>%
+        nnf_dropout(p = .01) %>%
+        
+        self$fc4()
     }
   )
 ```
@@ -85,16 +93,17 @@ net1 <- nn_module(
 Train the DNN
 
 ```{r echo=T, results='hide'}
-net1.fit <- net %>%
+net1.fit <- net1 %>%
     setup(
       loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
       optimizer = optim_adam
     ) %>%
-    fit(train_dl, epochs = n_epochs, valid_data = test_dl)
+    fit(train_dl, epochs = n_epochs, valid_data = test_dl, 
+        callbacks = list(luz_callback_early_stopping(patience = 7)))
 ```
 
 ```{r}
-plot_loss_records(net.fit, n_epochs)
+plot_loss_records(net1.fit)
 ```
 
 Get the predictions 
@@ -130,18 +139,25 @@ net2 <- nn_module(
     initialize = function(){
       self$fc1 <- nn_linear(in_features = 78, out_features = 78)
       self$fc2 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc3 <- nn_linear(in_features = 78, out_features = 2)
+      self$fc3 <- nn_linear(in_features = 78, out_features = 78)
+      self$fc4 <- nn_linear(in_features = 78, out_features = 2)
     }, 
     
     forward = function(x){
       x %>%
         self$fc1() %>%
         nnf_relu() %>%
+        nnf_dropout(p = .01) %>%
         
         self$fc2() %>%
         nnf_relu() %>%
+        nnf_dropout(p = .01) %>%
         
-        self$fc3()
+        self$fc3() %>%
+        nnf_relu() %>%
+        nnf_dropout(p = .01) %>%
+        
+        self$fc4()
     }
   )
 ```
@@ -153,17 +169,18 @@ net2.fit <- net2 %>%
       loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
       optimizer = optim_adam
     ) %>%
-    fit(train_dl2, epochs = n_epochs, valid_data = test_dl2)
+    fit(train_dl2, epochs = n_epochs, valid_data = test_dl2, 
+        callbacks = list(luz_callback_early_stopping(patience = 7)))
 ```
 
 
 ```{r}
-plot_loss_records(net2.fit, n_epochs)
+plot_loss_records(net2.fit)
 ```
 
 Get the predictions.
 ```{r}
-preds <- predict(fitted2, test_dl2)
+preds <- predict(net2.fit, test_dl2)
 preds.lambda <- as.matrix(preds)[,1]
 preds.mu <- as.matrix(preds)[,2]
 test_dl2 <- dataloader(test_ds2, batch_size = n_trees - n_train)

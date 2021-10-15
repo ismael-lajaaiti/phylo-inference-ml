@@ -10,6 +10,7 @@ output: html_notebook
 library(ape)
 library(diversitree)
 library(MLmetrics)
+library(ggplot2)
 ```
 
 
@@ -68,5 +69,124 @@ for (i in 1:4){
   plot(true, pred, main=paste(names[[i]], "- r2 =", r2.lambda, sep=" "))
   abline(0, 1)
 }
+```
+
+Convergence of $R^2$ score 
+
+```{r}
+generate_mle_predictions <- function(n, n_taxa, lambda_range, mu_range){
+  
+  # Store output data: mle prediction and true value
+  out <- data.frame(lambda      = rep(NA,0), mu     = rep(NA,0),
+                    epsilon     = rep(NA,0), r      = rep(NA,0),
+                    lambda.mle  = rep(NA,0), mu.mle = rep(NA,0),
+                    epsilon.mle = rep(NA,0), r.mle  = rep(NA,0)) 
+
+  while (nrow(out) < n){
+    # Generate random parameters
+    lambda  <- runif(1, lambda_range[1], lambda_range[2])
+    mu      <- runif(1, mu_range[1]    , mu_range[2]) 
+    r       <- lambda - mu
+    epsilon <- mu / lambda 
+    
+    # Generate random tree (w/ birth-death model)
+    tree <- trees(c(lambda, mu), "bd", max.taxa=n_taxa)[[1]]
+    
+    # Infer parameters 
+    lik <- make.bd(tree)
+    fit1 <- find.mle(lik, c(.1, .1)) # lambda & mu estimates 
+    fit2 <- birthdeath(tree) # r & epsilon estimates 
+  
+    # Save the parameters
+    if (fit1$code < 3){ # if model converges
+      out[nrow(out)+1,] <- c(lambda, mu, epsilon, r, fit1$par, fit2$para)
+    }
+    #else {print(lambda)}
+  }
+  return(out)
+  
+}
+```
+
+```{r}
+plot_prediction <- function(preds, valid, names){
+
+  par(mfrow=c(2,2))
+
+  for (i in 1:4){
+    pred <- preds[[i]]
+    true <- valid[[i]]
+    r2.lambda <- R2_Score(pred, true)
+    r2.lambda <- format(round(r2.lambda, 3), nsmall = 3)
+    plot(true, pred, main=paste(names[[i]], "- r2 =", r2.lambda, sep=" "))
+    abline(0, 1)
+  }
+}
+```
+
+```{r}
+save_r2_score <- function(n_list, n_rep, n_taxa, lambda_range, mu_range){
+  
+  df_r2 <- data.frame(r2 = rep(NA,0), type = rep(NA,0), n = rep(NA,0)) 
+  
+  names <- c("lambda", "mu", "r", "epsilon")
+  
+  for (n in n_list){
+    for (k in 1:n_rep){
+      out <- generate_mle_predictions(n, n_taxa, lambda_range, mu_range)
+      preds <- list(out$lambda.mle, out$mu.mle, out$r.mle, out$epsilon.mle)
+      valid <- list(out$lambda, out$mu, out$r, out$epsilon)
+      r2_score <- get_r2_score(preds, valid)
+      for (i in 1:4){
+        df_r2[nrow(df_r2)+1, ] <- c(r2_score[i], names[i], n)
+      }
+    }
+  }
+  
+  return(df_r2)
+  
+}
+```
+
+```{r}
+get_r2_score <- function(preds, valid){
+  r2_score <- c()
+  for (i in 1:4){
+    pred <- preds[[i]]
+    true <- valid[[i]]
+    r2 <- R2_Score(pred, true)
+    r2 <- format(round(r2, 3), nsmall = 3)
+    r2_score <- c(r2_score, r2)
+  }
+  return(r2_score)
+}
+```
+
+```{r}
+n_list <- c(50,100,150,200)
+n_rep <- 10
+df_r2 <- save_r2_score(n_list, n_rep, n_taxa, lambda_range, mu_range)
+df_r2
+```
+
+```{r}
+df_r2_lambda <- df_r2[df_r2["type"]=="epsilon",]
+df_r2_lambda$n <- as.numeric(as.vector(df_r2_lambda$n))
+df_r2_lambda$r2 <- as.numeric(as.vector(df_r2_lambda$r2))
+ggplot(df_r2_lambda, aes(x=n, y=r2)) + 
+  geom_point(alpha=.8)
+  #geom_boxplot() 
+```
+
+
+
+```{r}
+out <- generate_mle_predictions(100, n_taxa, lambda_range, mu_range)
+preds <- list(out$lambda.mle, out$mu.mle, out$r.mle, out$epsilon.mle)
+valid <- list(out$lambda, out$mu, out$r, out$epsilon)
+names <- list("lambda", "mu", "r", "epsilon")
+
+plot_prediction(preds, valid, names)
+get_r2_score(preds, valid)
 ```
 
