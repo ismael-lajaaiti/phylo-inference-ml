@@ -1,6 +1,8 @@
 ---
 title: "Infer Phylogenetic Parameters with Maximum Likelihood Estimator"
 output: html_notebook
+editor_options: 
+  chunk_output_type: console
 ---
 
 
@@ -11,6 +13,7 @@ library(ape)
 library(diversitree)
 library(MLmetrics)
 library(ggplot2)
+library(bbmle)
 ```
 
 
@@ -52,6 +55,44 @@ while (nrow(out) < n_test){
   #else {print(lambda)}
 }
 ```
+
+```{r}
+minus_ll <- function(lambda=.1, mu=.1){
+  return(-lik(c(lambda, mu)))
+}
+
+library(BayesianTools)
+
+
+setup = createBayesianSetup(likelihood = lik, lower = c(0.,0.), upper = c(1,1), names = c("lambda", "mu"))
+out = runMCMC(setup)
+plot(out)
+correlationPlot(out, start= 500)
+summary(out)
+
+
+
+ll.profile.mu <- c()
+ll.profile.lambda <- c()
+vec.mu <- c()
+vec.lambda <- c()
+
+for (i in 1:100){
+  var.mu <- .0 + 0.001*i
+  var.lambda <- .35 + 0.001*i
+  ll.mu <- lik(c(lambda, var.mu))
+  ll.lambda <- lik(c(var.lambda, mu))
+  vec.mu <- c(vec.mu, var.mu)
+  vec.lambda <- c(vec.lambda, var.lambda)
+  ll.profile.mu <- c(ll.profile.mu, ll.mu)
+  ll.profile.lambda <- c(ll.profile.lambda, ll.lambda)
+}
+
+par(mfrow=c(1,2))
+plot(vec.mu, ll.profile.mu)
+plot(vec.lambda, ll.profile.lambda)
+```
+
 
 
 ```{r}

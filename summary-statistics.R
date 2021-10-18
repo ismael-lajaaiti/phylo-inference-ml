@@ -991,7 +991,6 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
   r_vec <- c()
   epsilon_vec <- c()
   while (nrow(df) < n_trees){
-    print(nrow(df))
     lambda <- runif(1, lambda_min, lambda_max) # generate a random spec. rate
     mu <- runif(1, mu_min, mu_max) # same w/ ext. rate 
     tree <- trees(c(lambda, 0), "bd", max.taxa=n_taxa)[[1]] # create tree (BD)
@@ -1002,6 +1001,7 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
       mu_vec <- c(mu_vec, mu)
       r_vec <- c(r_vec, lambda - mu)
       epsilon_vec <- c(epsilon_vec, mu/lambda)
+      progress(100*nrow(df)/n_trees)
       }
   }
   df$lambda <- lambda_vec

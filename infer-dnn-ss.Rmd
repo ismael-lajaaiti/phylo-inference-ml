@@ -1,6 +1,8 @@
 ---
 title: "Infer Phylogenetic Parameters with DNN from Summary Statistics"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ### Libraries and Sources 
@@ -39,7 +41,7 @@ Prepare the training and test set
 
 ```{r}
 # Parameters of the NN's training
-n_train <- 10000
+n_train <- 1000
 batch_size <- 64
 n_epochs <- 100
 
