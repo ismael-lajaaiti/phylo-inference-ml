@@ -12,6 +12,7 @@ library(ape)
 library(diversitree)
 library(castor)
 library(phangorn)
+library(svMisc)
 source("encode-cblv.R")
 
 

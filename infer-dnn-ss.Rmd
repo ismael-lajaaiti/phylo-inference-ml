@@ -41,7 +41,7 @@ Prepare the training and test set
 
 ```{r}
 # Parameters of the NN's training
-n_train <- 1000
+n_train <- 10000
 batch_size <- 64
 n_epochs <- 100
 
@@ -61,32 +61,41 @@ test_dl  <- test_ds  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 Create the DNN 
 
 ```{r}
-net1 <- nn_module(
+
+n_hidden <- 78
+p_dropout <- 0.01
+
+net <- nn_module(
     
     "ss-dnn", 
     
     initialize = function(){
-      self$fc1 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc2 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc3 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc4 <- nn_linear(in_features = 78, out_features = 2)
+      self$fc1 <- nn_linear(in_features = 78, out_features = n_hidden)
+      self$fc2 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+      self$fc3 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+      self$fc4 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+      self$fc5 <- nn_linear(in_features = n_hidden, out_features = 2)
     }, 
     
     forward = function(x){
       x %>%
         self$fc1() %>%
         nnf_relu() %>%
-        nnf_dropout(p = .01) %>%
+        nnf_dropout(p = p_dropout) %>%
         
         self$fc2() %>%
         nnf_relu() %>%
-        nnf_dropout(p = .01) %>%
+        nnf_dropout(p = p_dropout) %>%
         
         self$fc3() %>%
         nnf_relu() %>%
-        nnf_dropout(p = .01) %>%
+        nnf_dropout(p = p_dropout) %>%
         
-        self$fc4()
+        self$fc4() %>%
+        nnf_relu() %>%
+        nnf_dropout(p = p_dropout) %>%
+        
+        self$fc5()
     }
   )
 ```
@@ -95,7 +104,7 @@ net1 <- nn_module(
 Train the DNN
 
 ```{r echo=T, results='hide'}
-net1.fit <- net1 %>%
+net.fit.1 <- net %>%
     setup(
       loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
       optimizer = optim_adam
@@ -105,13 +114,13 @@ net1.fit <- net1 %>%
 ```
 
 ```{r}
-plot_loss_records(net1.fit)
+plot_loss_records(net.fit.1)
 ```
 
 Get the predictions 
 
 ```{r}
-preds <- predict(net1.fit, test_dl)
+preds <- predict(net.fit.1, test_dl)
 preds.r <- as.matrix(preds)[,1]
 preds.epsilon <- as.matrix(preds)[,2]
 test_dl <- dataloader(test_ds, batch_size = n_trees - n_train)
@@ -132,41 +141,10 @@ train_dl2 <- train_ds2 %>% dataloader(batch_size=batch_size, shuffle=TRUE)
 test_dl2  <- test_ds2  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 ```
 
-Create the network.
-```{r}
-net2 <- nn_module(
-    
-    "ss-dnn", 
-    
-    initialize = function(){
-      self$fc1 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc2 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc3 <- nn_linear(in_features = 78, out_features = 78)
-      self$fc4 <- nn_linear(in_features = 78, out_features = 2)
-    }, 
-    
-    forward = function(x){
-      x %>%
-        self$fc1() %>%
-        nnf_relu() %>%
-        nnf_dropout(p = .01) %>%
-        
-        self$fc2() %>%
-        nnf_relu() %>%
-        nnf_dropout(p = .01) %>%
-        
-        self$fc3() %>%
-        nnf_relu() %>%
-        nnf_dropout(p = .01) %>%
-        
-        self$fc4()
-    }
-  )
-```
 
 Train the network.
 ```{r echo=T, results='hide'}
-net2.fit <- net2 %>%
+net.fit.2 <- net %>%
     setup(
       loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
       optimizer = optim_adam
@@ -177,12 +155,12 @@ net2.fit <- net2 %>%
 
 
 ```{r}
-plot_loss_records(net2.fit)
+plot_loss_records(net.fit.2)
 ```
 
 Get the predictions.
 ```{r}
-preds <- predict(net2.fit, test_dl2)
+preds <- predict(net.fit.2, test_dl2)
 preds.lambda <- as.matrix(preds)[,1]
 preds.mu <- as.matrix(preds)[,2]
 test_dl2 <- dataloader(test_ds2, batch_size = n_trees - n_train)
