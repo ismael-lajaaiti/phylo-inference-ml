@@ -27,14 +27,8 @@ library(phangorn)
 #' @export
 #' @examples
 is_tip <- function(node, tree){
-  if (node==length(tree$tip.label)+1){ # check if node is root 
-    bool <- FALSE
-  }
-  else{
-    df <- tree$orig
-    bool <- !df[df["idx2"]==node,]$split # has the node children?
-  }
-  return(bool)
+  n_tip <- length(tree$tip.label)
+  return(node <= n_tip)
 }
 
 
@@ -56,8 +50,7 @@ get_child <- function(node, tree){
   
   # First check that the node is not a tip (otherwise returns NA)
   if (!is_tip(node, tree)){ 
-    df  <- tree$orig
-    idx <- df[df["parent2"]==node,]$idx2
+    idx <- phangorn::Children(tree, node)
     
     # If both child are tips (same dist. to root), random attribution (l/r)
     if (is_tip(idx[1], tree) & is_tip(idx[2], tree)){

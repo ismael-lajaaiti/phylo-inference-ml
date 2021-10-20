@@ -22,8 +22,8 @@ the phylogenetic parameters ($(\lambda,\mu);(r,\varepsilon)$; targets).
 
 ```{r results='hide', echo=T}
 # Parameters of phylogenetic trees
-n_trees <- 10200 # total number of trees (train + test)
-n_taxa <- 100 # size of the trees
+n_trees <- 700 # total number of trees (train + test)
+n_taxa <- 150 # size of the trees
 lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
 mu_range <- c(0.02, 0.06) # same for mu
 
@@ -41,7 +41,7 @@ Prepare the training and test set
 
 ```{r}
 # Parameters of the NN's training
-n_train <- 10000
+n_train <- 500
 batch_size <- 64
 n_epochs <- 100
 
@@ -62,7 +62,8 @@ Create the DNN
 
 ```{r}
 
-n_hidden <- 78
+n_in <- ncol(df) - 4
+n_hidden <- n_in
 p_dropout <- 0.01
 
 net <- nn_module(
@@ -70,7 +71,7 @@ net <- nn_module(
     "ss-dnn", 
     
     initialize = function(){
-      self$fc1 <- nn_linear(in_features = 78, out_features = n_hidden)
+      self$fc1 <- nn_linear(in_features = n_in, out_features = n_hidden)
       self$fc2 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
       self$fc3 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
       self$fc4 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
@@ -188,6 +189,9 @@ for (i in 1:4){
   r2.lambda <- format(round(r2.lambda, 3), nsmall = 3)
   plot(true, pred, main=paste(names[[i]], "- r2 =", r2.lambda, sep=" "))
   abline(0,1)
+  fit = lm(pred ~ true)
+  sig = summary(fit)$coefficients[2,4]
+  abline(fit, col="red", lty = ifelse(sig < .05,1,2))
 }
 ```
 

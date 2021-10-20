@@ -35,7 +35,7 @@ source("encode-cblv.R")
 #' @export
 #' @examples
 create_nodes_data_frame <- function(tree){
-  n <- length(tree$orig$idx) + 1 
+  n <- 2*length(tree$tip.label) - 1 
   n_tips <- length(tree$tip.label)
   df.nodes <- data.frame(index=rep(NA,n),   # index of the node
                          is.tip=rep(NA,n),  # is the node a tip?
@@ -660,7 +660,7 @@ get_il_nodes <- function(tree){
 #' @export
 #' @examples
 get_staircaseness1 <- function(df.nodes, tree){
-  n <- length(tree$orig$idx) + 1 
+  n <- 2*length(tree$tip.label) - 1 
   n_tips <- length(tree$tip.label)
   n_nodes <- n - n_tips
   stair1 <- table(df.nodes[df.nodes["stair"]==1,]$stair)[[1]] / n_nodes 
@@ -787,31 +787,86 @@ get_ltt_coords <- function(tree){
 #' - slope of the 3rd over the slope of the 2nd part 
 #'
 #' @param tree phylo tree 
+#' @param n integer saying in how many slices we want to cut our time interval
 #'
 #' @return list (of slopes and ratio)
 #' @export
 #' @examples
-get_ltt_slopes <- function(tree){
+get_ltt_slopes <- function(tree, n=10){
   
-  slopes <- list("slope.1" = NA, "slope.2" = NA, "slope.3" = NA, 
-                 "ratio.12" = NA, "ratio.23" = NA)
+  slopes <- list()
   
   ltt.coord <- ape::ltt.plot.coords(tree) 
   ltt.df <- as.data.frame(ltt.coord)
   ltt.df["N"] <- log(ltt.df["N"])
-  if (!any(is.na(ltt.df["N"])) & !any(is.na(ltt.df["time"]))){
-    t <- ltt.df$time[1] # root time 
-    ltt.df.1 <- ltt.df[ltt.df["time"] < 2*t/3,]
-    ltt.df.2 <- ltt.df[ltt.df["time"] <= t/3 & ltt.df["time"] >= 2*t/3,]
-    ltt.df.3 <- ltt.df[ltt.df["time"] > t/3,]
-    slopes$slope.1  <- lm(N ~ time, ltt.df.1)$coef[[2]]
-    slopes$slope.2  <- lm(N ~ time, ltt.df.2)$coef[[2]]
-    slopes$slope.3  <- lm(N ~ time, ltt.df.3)$coef[[2]]
-    slopes$ratio.12 <- slopes$slope.2 / slopes$slope.1
-    slopes$ratio.23 <- slopes$slope.3 / slopes$slope.2
-  }
-  else{print("Error: NA values in ltt coord.")}
+  ltt.df.list <- divide_ltt.df_points(ltt.df, n)
+  if (!has_an_empty_df(ltt.df.list)){
+    for (i in 1:n){
+      ltt.df.i <- ltt.df.list[[paste("part", i, sep=".")]]
+      slopes[[paste("slope", i, sep=".")]] <- lm(N ~ time, ltt.df.i)$coef[[2]]
+    }
+  }  
+  else{for (i in 1:n){slopes[[paste("slope", i, sep=".")]] <- NA}}
   return(slopes)
+}
+
+
+#' Check if the list has an empty data.frame
+#'
+#' 
+#' @param l list containing data.frames 
+#'
+#' @return logical: if l has an empty df, returns TRUE; else returns FALSE 
+#' @export
+#' @examples
+has_an_empty_df <- function(l){
+  bool <- FALSE
+  for (df in l){
+    if (nrow(df) == 0){bool <- TRUE}
+  }
+  return(bool)
+}
+
+
+#' Divide ltt.df into n sub-data.frame of equal time interval
+#'
+#' Let's consider a tree of root time T<0 and t=0 is the present. 
+#' divide_ltt.df returns a list of n data.frame 
+#' the i data.frame of the list containes ltt coordinates such that the time (t)
+#' of these coordinates verifies: 
+#' (n+1-i)/n <= t <= (n-i)/n
+#'
+#' @param ltt.df data.frame containing the ltt coordinates 
+#' @param n integer saying in how many slices we want to split ltt.df
+#'
+#' @return ltt.df.list $i contains the i data.frame 
+#' @export
+#' @examples
+divide_ltt.df_time <- function(ltt.df, n){
+  ltt.df.list <- list() # list storing the parts of the data.frame
+  t <- ltt.df$time[1] # root time
+  for (i in 1:n){
+    inf <- (n + 1 - i)*t/n  # lower time bound (>= inf)
+    sup <- (n - i)*t/n      # upper time bound (<= sup)
+    ltt.df.i <- ltt.df[ltt.df["time"] >= inf & ltt.df["time"] <= sup,] 
+    ltt.df.list[[paste("part", i, sep=".")]] <- ltt.df.i
+  }
+  return(ltt.df.list)
+}
+
+
+divide_ltt.df_points <- function(ltt.df, n){
+  ltt.df.list <- list()
+  len <- nrow(ltt.df)
+  bounds <- as.integer(seq(1, len, length.out=n+1))
+  bounds[n+1] <- bounds[n+1] 
+  for (i in 1:n){
+    inf <- bounds[i] + (i!=1)
+    sup <- bounds[i+1]
+    ltt.df.i <- ltt.df[inf:sup,]
+    ltt.df.list[[paste("part", i, sep=".")]] <- ltt.df.i
+  }
+  return(ltt.df.list)
 }
 
 
@@ -865,7 +920,7 @@ convert_coord_to_list <- function(ltt.coord){
 #' @export
 #' @examples
 get_ss <- function(tree){
-
+  
   # Create nodes data.frame
   df.nodes <- create_nodes_data_frame(tree)
   df.nodes <- fill_nodes_all(df.nodes, tree)
@@ -894,15 +949,33 @@ get_ss <- function(tree){
 #' @return vector
 #' @export
 #' @examples
-create_ltt.names <- function(){
-  ltt.names <- c() # initialize vector 
+create_ltt.names.coord <- function(){
+  ltt.names.coord <- c() # initialize vector 
   for (coord in c("t", "N")){ # x & y coordinates 
     for (i in 1:20){ # 20 points for each
       new_name <- paste("ltt", coord, i, sep="_")
-      ltt.names <- c(ltt.names, new_name)
+      ltt.names.coord <- c(ltt.names.coord, new_name)
     }
   }
-  return(ltt.names)
+  return(ltt.names.coord)
+}
+
+
+#' Create the vector containing the ltt statistic names
+#'
+#'
+#' @param void 
+#'
+#' @return vector
+#' @export
+#' @examples
+create_ltt.names.slope <- function(n=10){
+  ltt.names.slope <- c() # initialize vector 
+  for (i in 1:n){ # 20 points for each
+      new_name <- paste("ltt", "slope", i, sep="_")
+      ltt.names.slope <- c(ltt.names.slope, new_name)
+  }
+  return(ltt.names.slope)
 }
 
 
@@ -925,12 +998,11 @@ create_ss.names <- function(){
                 "ie.3.mean", "ie.3.med", "ie.3.var",
                 "height", "colless", "sackin",
                 "wdratio", "deltaw", "max_ladder", 
-                "il_nodes", "stair1", "stair2",
-                "ltt_slope1", "ltt_slope2", "ltt_slope3",
-                "ltt_ratio21", "ltt_ratio32")
+                "il_nodes", "stair1", "stair2")
   
-  ltt.names <- create_ltt.names()
-  ss.names <- c(ss.names, ltt.names)
+  ltt.names.slope <- create_ltt.names.slope()
+  ltt.names.coord  <- create_ltt.names.coord()
+  ss.names <- c(ss.names, ltt.names.slope, ltt.names.coord)
   
   return(ss.names)
 }
@@ -994,7 +1066,7 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
   while (nrow(df) < n_trees){
     lambda <- runif(1, lambda_min, lambda_max) # generate a random spec. rate
     mu <- runif(1, mu_min, mu_max) # same w/ ext. rate 
-    tree <- trees(c(lambda, 0), "bd", max.taxa=n_taxa)[[1]] # create tree (BD)
+    tree <- trees(c(lambda, mu), "bd", max.taxa=n_taxa)[[1]] # create tree (BD)
     ss <- get_ss(tree) # compute summary statistics 
     if (!any(is.na(ss))){
       df <- add_row(df, ss)
@@ -1068,7 +1140,7 @@ convert_dataframe_to_dataset <- function(df, direct_target=FALSE){
 if (FALSE){ # don't execute the following when imported with 'source'
   
   
-  tree <- trees(c(.1, 0), "bd", max.taxa=50)[[1]]
+  tree <- trees(c(.1, 0.05), "bd", max.taxa=500)[[1]]
   plot(tree)
   nodelabels()
   tiplabels()
@@ -1078,8 +1150,15 @@ if (FALSE){ # don't execute the following when imported with 'source'
   lambda_vec <- c()
   height_vec <- c()
   
+  n <- 10
+  tree <- trees(c(.1, 0.05), "bd", max.taxa=500)[[1]]
+  slopes <- get_ltt_slopes(tree, n)
+  plot(1:n, slopes, ylim = c(.04,.11))
+  abline(.1,0)
+  abline(.05,0)
+  
   for (i in 1:300){
-    lambda <- runif(1, 0.01, 0.5)
+    lambda <- runif(1, 0.0, 0.5)
     lambda_vec <- c(lambda_vec, lambda)
     tree <- trees(c(lambda, 0), "bd", max.taxa=50)[[1]]
     df.nodes <- create_nodes_data_frame(tree)
