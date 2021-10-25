@@ -683,16 +683,17 @@ get_staircaseness1 <- function(df.nodes, tree){
 get_topo_ss <- function(df.nodes, tree){
 
   ss.topo <- list("height"  = -999, "colless" = -999, "sackin"     = -999, 
-                  "wdratio" = -999, "deltaw"  = -999, "max_ladder" = -999,
-                  "il_nodes"= -999, "stair1"  = -999, "stair2"     = -999)
+                  "wdratio" = -999, "deltaw"  = -999, #"max_ladder" = -999,
+                  #"il_nodes"= -999, 
+                  "stair1"  = -999, "stair2"     = -999)
   
   ss.topo$height     <- get_height(df.nodes)
   ss.topo$colless    <- sum(df.nodes$colless, na.rm = TRUE)
   ss.topo$sackin     <- sum(df.nodes[df.nodes["is.tip"]==TRUE,]$depth)
   ss.topo$wdratio    <- get_wdratio(df.nodes) 
   ss.topo$deltaw     <- get_deltaw(df.nodes)
-  ss.topo$max_ladder <- get_max_ladder(tree)
-  ss.topo$il_nodes   <- get_il_nodes(tree)
+  #ss.topo$max_ladder <- get_max_ladder(tree)
+  #ss.topo$il_nodes   <- get_il_nodes(tree)
   ss.topo$stair1     <- get_staircaseness1(df.nodes, tree) 
   ss.topo$stair2     <- sum(df.nodes$stair, na.rm = TRUE)
   return(ss.topo)
@@ -882,11 +883,12 @@ divide_ltt.df_points <- function(ltt.df, n){
 #' @examples
 get_all_ss <- function(df.nodes, df.edges, tree){
   ss.bl   <- get_bl_ss(df.edges)                 # branch length ss 
-  ss.topo <- get_topo_ss(df.nodes, tree)         # topological ss
+  #ss.topo <- get_topo_ss(df.nodes, tree)         # topological ss
   ss.ltt.coord <- get_ltt_coords(tree)
   ss.ltt.slopes <- get_ltt_slopes(tree)
   
-  ss.all <- c(ss.bl, ss.topo, ss.ltt.slopes, ss.ltt.coord)    # merge all ss in a single list 
+  ss.all <- c(ss.bl, #ss.topo, 
+              ss.ltt.slopes, ss.ltt.coord)    # merge all ss in a single list 
   return(ss.all)
 }
 
@@ -901,7 +903,7 @@ get_all_ss <- function(df.nodes, df.edges, tree){
 #' @examples
 convert_coord_to_list <- function(ltt.coord){
   l <- list() # initialize the list 
-  ltt.names <- create_ltt.names() # get the names of the LTT coord.
+  ltt.names <- create_ltt.names.coord() # get the names of the LTT coord.
   for (i in 1:40){ # 40 coordinates (20 for x coord. + 20 for y coord)
     row <- 1 + (i-1)%%20
     col <- 1 + (i-1)%/%20
@@ -995,10 +997,10 @@ create_ss.names <- function(){
                 "i.3.mean", "i.3.med", "i.3.var",
                 "ie.1.mean", "ie.1.med", "ie.1.var",
                 "ie.2.mean", "ie.2.med", "ie.2.var",
-                "ie.3.mean", "ie.3.med", "ie.3.var",
-                "height", "colless", "sackin",
-                "wdratio", "deltaw", "max_ladder", 
-                "il_nodes", "stair1", "stair2")
+                "ie.3.mean", "ie.3.med", "ie.3.var")#,
+                #"height", "colless", "sackin",
+                #"wdratio", "deltaw", "max_ladder", 
+                #"il_nodes", "stair1", "stair2")
   
   ltt.names.slope <- create_ltt.names.slope()
   ltt.names.coord  <- create_ltt.names.coord()
@@ -1151,7 +1153,7 @@ if (FALSE){ # don't execute the following when imported with 'source'
   height_vec <- c()
   
   n <- 10
-  tree <- trees(c(.1, 0.05), "bd", max.taxa=500)[[1]]
+  tree <- trees(c(.1, 0.05), "bd", max.taxa=1000)[[1]]
   slopes <- get_ltt_slopes(tree, n)
   plot(1:n, slopes, ylim = c(.04,.11))
   abline(.1,0)

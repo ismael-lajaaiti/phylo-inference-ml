@@ -14,6 +14,7 @@ library(ggplot2)
 library(MLmetrics)
 source("summary-statistics.R")
 source("neural-network-functions.R")
+source("infer-general-functions.R")
 ```
 
 
@@ -22,8 +23,8 @@ the phylogenetic parameters ($(\lambda,\mu);(r,\varepsilon)$; targets).
 
 ```{r results='hide', echo=T}
 # Parameters of phylogenetic trees
-n_trees <- 700 # total number of trees (train + test)
-n_taxa <- 150 # size of the trees
+n_trees <- 5200 # total number of trees (train + test)
+n_taxa <- 500 # size of the trees
 lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
 mu_range <- c(0.02, 0.06) # same for mu
 
@@ -41,7 +42,7 @@ Prepare the training and test set
 
 ```{r}
 # Parameters of the NN's training
-n_train <- 500
+n_train <- 5000
 batch_size <- 64
 n_epochs <- 100
 
@@ -179,6 +180,8 @@ targets.list <- list(targets.lambda, targets.mu,
 preds.list <- list(preds.lambda, preds.mu, preds.r, preds.epsilon)
 names <- list("lambda", "mu", "r", "epsilon")
 
+pdf("figures/dnn-ss/taxa-500-lambda-0.1-0.5-mu-0.02-0.06-train-5000-slopes-10.pdf")
+
 
 par(mfrow=c(2,2))
 
@@ -193,6 +196,8 @@ for (i in 1:4){
   sig = summary(fit)$coefficients[2,4]
   abline(fit, col="red", lty = ifelse(sig < .05,1,2))
 }
+
+dev.off()
 ```
 
 
