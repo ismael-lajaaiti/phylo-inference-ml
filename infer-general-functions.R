@@ -137,3 +137,56 @@ get_mu_vec <- function(list.lambda_r){
   return(vec.mu)
   
 }
+
+
+
+plot_pred_vs_true <- function(pred.list, true.list, names,
+                              method = "model", save = FALSE, fname = "file-name",
+                              r2_score = TRUE, lm_fit = TRUE, subtitles = ""){
+  
+  
+  if (save){
+    fname <- paste(fname, "pdf", sep=".")
+    pdf(fname)
+    }
+  
+  n <- length(pred.list)
+  n_row <- n %/% 2
+  n_col <- 2
+  
+  par(mfrow=c(n_row,n_col))
+  
+  for (i in 1:n){
+    
+    pred.name <- paste(names[[1 + (i-1)%%2]], method, sep=".") # parameter name
+    pred <- pred.list[[i]] # parameter prediction 
+    true <- true.list[[1 + (i-1)%%2]] # parameter true 
+    
+    # Evaluate the R2 score of predictions vs. truth
+    if (r2_score){
+      r2 <- R2_Score(pred, true) # compute r2
+      r2 <- format(round(r2, 3), nsmall = 3) # format r2 
+      plot(true, pred, main = paste(names[[1 + (i-1)%%2]], "- r2 =", r2, sep=" "),
+           sub = subtitles[1 + (i-1)%/%2])
+    }
+    else{
+      plot(true, pred, main = names[[i]])
+    }
+    
+    abline(0, 1) # plot identity line (for the eye)
+    
+    # Linear fit of predictions vs. truth (to see significant trends)
+    if (lm_fit){
+      fit = lm(pred ~ true)
+      sig = summary(fit)$coefficients[2,4]
+      abline(fit, col="red", lty = ifelse(sig < .05,1,2))
+    }
+  }
+  
+  if (save){dev.off()}
+}
+
+
+
+
+

@@ -23,8 +23,8 @@ the phylogenetic parameters ($(\lambda,\mu);(r,\varepsilon)$; targets).
 
 ```{r results='hide', echo=T}
 # Parameters of phylogenetic trees
-n_trees <- 5200 # total number of trees (train + test)
-n_taxa <- 500 # size of the trees
+n_trees <- 1200 # total number of trees (train + test)
+n_taxa <- 50 # size of the trees
 lambda_range <- c(0.1, 0.5) # range within random lambda will be generated 
 mu_range <- c(0.02, 0.06) # same for mu
 
@@ -42,7 +42,7 @@ Prepare the training and test set
 
 ```{r}
 # Parameters of the NN's training
-n_train <- 5000
+n_train <- 1000
 batch_size <- 64
 n_epochs <- 100
 
