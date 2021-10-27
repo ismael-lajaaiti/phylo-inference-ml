@@ -21,7 +21,7 @@ source("neural-network-functions.R")
 
 ```{r}
 
-n_trees <- 5200 # number of trees to generate 
+n_trees <- 200 # number of trees to generate 
 n_taxa <- 300 # size of the trees
 lambda_range <- c(0.15, 0.25) # range within random lambda will be generated 
 mu_range <- c(0.0, 0.1) # same for mu

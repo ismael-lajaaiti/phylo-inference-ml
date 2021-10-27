@@ -15,6 +15,7 @@ library(RPANDA)
 library(MLmetrics)
 library(ggplot2)
 library(bbmle)
+library(svMisc)
 source("infer-general-functions.R")
 source("infer-mle.R")
 ```
@@ -99,28 +100,21 @@ plot(vec.lambda, ll.profile.lambda)
 
 
 ```{r}
-n_trees <- 10
-n_taxa  <- 300
+# Parameters 
+n_trees <- 50   # number of trees to generate 
+n_taxa  <- 100  # number of taxa of each tree 
 lambda_range <- c(0.15, 0.25) # range within random lambda will be generated 
 mu_range <- c(0.0, 0.1)       # same for mu
 
-trees <- list() # initialize tree list
-vec.true.lambda <- c() # vector where true lambda values will be stored
-vec.true.mu     <- c() # vector where true mu values will be stored 
-
-for (i in 1:n_trees){
-  # Generate the phylogenetic tree 
-  true.lambda  <- runif(1, lambda_range[1], lambda_range[2]) # generate random lambda
-  true.mu      <- runif(1, mu_range[1]    , mu_range[2]) # generate random mu
-  vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
-  vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
-  tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
-  trees <- append(trees, list(tree)) # append the new tree to the list 
-}
+# Generate the trees and save 
+out <- generate_trees(n_trees, n_taxa, lambda_range, mu_range, ss_check = TRUE)
+trees <- out$trees # contains the phylogenetic trees generated 
+vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
+vec.true.mu     <- out$mu # contains the corresponding extinction rates 
 
 plot_mle_predictions(trees, vec.true.lambda, vec.true.mu,
                      lambda_range, mu_range, 
-                     type = "all", save = TRUE)
+                     type = "diversitree", save = TRUE)
 
 ```
 

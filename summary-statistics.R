@@ -1087,6 +1087,31 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
 }
 
 
+generate_ss_dataframe_from_trees <- function(trees, vec.lambda, vec.mu){
+  
+  ss.names <- create_ss.names() # summary statistic names 
+  df <- create_ss_dataframe(ss.names) # initialize the data.frame (empty)
+  
+  n_trees <- length(trees)
+  
+  cat("Computing tree summary statistics...\n")
+
+  for (i in 1:n_trees){
+    tree <- trees[[i]] # get the tree
+    ss   <- get_ss(tree) # compute summary statistics 
+    df <- add_row(df, ss)
+    progress(i, n_trees, progress.bar = TRUE, init = (i==1)) # print progress 
+  }
+  
+  cat("\nComputing tree summary statistics... Done.")
+  
+  df$lambda <- vec.lambda # store lambda values in df 
+  df$mu <- vec.mu # store mu values in df 
+  
+  return(df)
+}
+
+
 #' Convert a data.frame to a torch::dataset 
 #'
 #'
@@ -1098,13 +1123,13 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
 #' @return torch::dataset()
 #' @export
 #' @examples
-convert_dataframe_to_dataset <- function(df, direct_target=FALSE){
+convert_ss_dataframe_to_dataset <- function(df){
   
   ss_dataset <- torch::dataset(
     
     name <- "summary_statistics_dataset", 
     
-    initialize = function(df, direct_target){
+    initialize = function(df){
 
       dataframe <- na.omit(df) # delete NA
       
@@ -1115,8 +1140,7 @@ convert_dataframe_to_dataset <- function(df, direct_target=FALSE){
       self$x <- torch_tensor(x)
       
       # target data 
-      if (direct_target){target.names <- c("lambda", "mu")}
-      else {target.names <- c("r", "epsilon")}
+      target.names <- c("lambda", "mu")
       y = df[target.names] %>% 
         as.matrix()
       self$y <- torch_tensor(y)
