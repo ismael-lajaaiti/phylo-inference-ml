@@ -8,6 +8,7 @@ library(ape)
 library(diversitree)
 library(RPANDA)
 library(MLmetrics)
+source("summary-statistics.R")
 
 #### end ####
 
@@ -191,7 +192,7 @@ plot_pred_vs_true <- function(pred.list, true.list, names,
 }
 
 
-generate_trees <- function(n_trees, n_taxa, lambda_range, mu_range,
+generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
                            ss_check = TRUE){
   
   trees <- list() # initialize tree list where trees will be stored 
@@ -202,8 +203,9 @@ generate_trees <- function(n_trees, n_taxa, lambda_range, mu_range,
   
   while (length(trees) < n_trees){
     # Generate the phylogenetic tree 
-    true.lambda  <- runif(1, lambda_range[1], lambda_range[2]) # generate random lambda
-    true.mu      <- runif(1, mu_range[1]    , mu_range[2]) # generate random mu
+    true.lambda  <- runif(1, lambda_range[1] , lambda_range[2]) # generate random lambda
+    epsilon      <- runif(1, epsilon_range[1], epsilon_range[2]) # generate random epsilon
+    true.mu      <- epsilon * true.lambda # compute corresponding mu
     tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
     
     # If checking that summary statistics have no NA
@@ -416,6 +418,26 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   
 }
 
+
+get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, mu_range,
+                                   ss_check){
+  
+  dir <- "trees-dataset/"
+  fname <- paste("ntrees", n_trees, "ntaxa", n_taxa,
+                 "lambda" , lambda_range[1] , lambda_range[2], 
+                 "epsilon", epsilon_range[1], epsilon_range[2], 
+                 "sscheck", ss_check, sep="-")
+  fname.trees  <- paste(dir, fname, "-trees.rds", sep="")
+  fname.lambda <- paste(dir, fname, "-lambda.rds", sep="")
+  fname.mu     <- paste(dir, fname, "-mu.rds", sep="")
+  
+  fnames <- list("trees"  = fname.trees, 
+                 "lambda" = fname.lambda, 
+                 "mu"     = fname.mu)
+  
+  return(fnames)
+  
+}
 
 
 
