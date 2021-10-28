@@ -2,22 +2,22 @@
 
 library(torch)
 library(luz)
-library(ggplot2)
-library(MLmetrics)
 source("summary-statistics.R")
 source("infer-general-functions.R")
 source("neural-network-functions.R")
 
 
 # Parameters of phylogenetic trees
-n_trees <- 10500 # total number of trees (train + valid + test)
-n_taxa  <- 300 # size of the trees
-lambda_range <- c(0.15, 0.25) # range within random lambda will be generated 
-mu_range     <- c(0.0 , 0.1) # same for mu
+n_trees <- 10000 # total number of trees (train + valid + test)
+n_taxa  <- 100 # size of the trees
+lambda_range  <- c(0.1, 1.) # range of lambda values 
+epsilon_range <- c(0.0, 0.9) # range of epsilon values 
+ss_check <- TRUE
 
 # Generate the trees and save 
-out   <- generate_trees(n_trees, n_taxa, lambda_range, mu_range, ss_check = TRUE)
-trees <- out$trees # contains the phylogenetic trees generated 
+out   <- load_dataset(n_trees, n_taxa, lambda_range, epsilon_range,
+                      ss_check = ss_check)
+trees           <- out$trees # contains the phylogenetic trees generated 
 vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
 vec.true.mu     <- out$mu # contains the corresponding extinction rates 
 
@@ -26,7 +26,7 @@ df <- generate_ss_dataframe_from_trees(trees, vec.true.lambda, vec.true.mu)
 
 # Parameters of the NN's training
 n_train    <- 9000
-n_valid    <- 1000
+n_valid    <- 500
 n_test     <- 500
 batch_size <- 64
 
@@ -87,7 +87,7 @@ cat("\nTraining DNN...")
 # Fit the DNN
 dnn.fit <- dnn %>%
   setup(
-    loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
+    loss = function(y_hat, y_true) nnf_l1_loss(y_hat, y_true),
     optimizer = optim_adam
   ) %>%
   fit(train_dl, epochs = n_epochs, valid_data = valid_dl, 
@@ -107,18 +107,13 @@ name.list <- list("lambda", "mu")
 true.list <- list(vec.true.lambda, vec.true.mu)
 pred.list <- list(vec.pred.lambda, vec.pred.mu)
 
-n_layers <- length(dnn()$parameters)/2 - 2 
-path <- "figures/dnn-ss/"
-fname <- paste("ntaxa", n_taxa,
-               "lambda", lambda_range[1], lambda_range[2], 
-               "mu", mu_range[1], mu_range[2],
-               "ntest", n_test,
-               "nlayer", n_layers,
-               "nhidden", n_hidden,
-               "ntrain", n_train, sep="-")
-
-fname.dnn <- paste(path, fname, "-dnn-ss", sep = "")
-fname.mle <- paste(path, fname, "-mle", sep="")
+n_layer <- length(dnn()$parameters)/2 - 2 
+dir <- "figures/dnn-ss/"
+fname <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, epsilon_range,
+                              dir, "nn", n_layer = n_layer,
+                              n_hidden = n_hidden, n_train = n_train)
+fname.dnn <- paste(fname, "-dnn-ss", sep = "")
+fname.mle <- paste(fname, "-mle", sep = "")
 
 # Plot DNN predictions 
 plot_pred_vs_true(pred.list, true.list, name.list, "dnn", save = TRUE, fname = fname.dnn)
@@ -127,5 +122,5 @@ plot_pred_vs_true(pred.list, true.list, name.list, "dnn", save = TRUE, fname = f
 trees <- trees[test_indices]
 plot_mle_predictions(trees, vec.true.lambda, vec.true.mu, 
                      lambda_range, mu_range, 
-                     type = "diversitree",
+                     type = "ape",
                      save = TRUE, fname = fname.mle)

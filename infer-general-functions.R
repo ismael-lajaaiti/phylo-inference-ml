@@ -147,7 +147,8 @@ get_mu_vec <- function(list.lambda_r){
 
 plot_pred_vs_true <- function(pred.list, true.list, names,
                               method = "model", save = FALSE, fname = "file-name",
-                              r2_score = TRUE, lm_fit = TRUE, subtitles = ""){
+                              r2_score = TRUE, mse_score = TRUE, 
+                              lm_fit = TRUE, subtitles = ""){
   
   n <- length(pred.list)
   n_row <- n %/% 2
@@ -167,24 +168,39 @@ plot_pred_vs_true <- function(pred.list, true.list, names,
     pred <- pred.list[[i]] # parameter prediction 
     true <- true.list[[1 + (i-1)%%2]] # parameter true 
     
+    main <- paste(names[[1 + (i-1)%%2]])
+    
     # Evaluate the R2 score of predictions vs. truth
     if (r2_score){
       r2 <- R2_Score(pred, true) # compute r2
       r2 <- format(round(r2, 3), nsmall = 3) # format r2 
-      plot(true, pred, main = paste(names[[1 + (i-1)%%2]], "- r2 =", r2, sep=" "),
-           sub = subtitles[1 + (i-1)%/%2])
-    }
-    else{
-      plot(true, pred, main = names[[i]])
+      main <- paste(main, " | r2 = ", r2, sep = "")
     }
     
-    abline(0, 1) # plot identity line (for the eye)
+    # Evaluate the MSE of predictions vs. truth 
+    if (mse_score){
+      mse <- MSE(pred, true) # compute mse 
+      mse <- format(round(mse, 3), nsmall = 3) # format mse
+      main <- paste(main, " | mse = ", mse, sep = "")
+    }
+    
+    # Scatter plot - Predictions vs. truth
+    plot(true, pred, main = main,
+         sub = subtitles[1 + (i-1)%/%2])
+
+    # Identity line (for the eye)
+    abline(0, 1) # x -> y line (for the eye)
     
     # Linear fit of predictions vs. truth (to see significant trends)
     if (lm_fit){
       fit = lm(pred ~ true)
+      fit.scale = lm(pred ~ scale(true, scale = FALSE))
       sig = summary(fit)$coefficients[2,4]
+      sig.scale = summary(fit.scale)$coefficients[2,4]
+      #print(summary(fit.scale))
       abline(fit, col="red", lty = ifelse(sig < .05,1,2))
+      abline(fit.scale, col="blue", lty = ifelse(sig < .05,1,2))
+      
     }
   }
   
@@ -306,7 +322,7 @@ convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates){
 
 
 plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu, 
-                                 lambda_range, mu_range, type = "all", 
+                                 lambda_range, epsilon_range, type = "all", 
                                  save = FALSE, fname = NA){
   
   n_trees <- length(trees)
@@ -330,15 +346,15 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
     height <- max(node.age(tree)$ages) # height of the tree 
     f.lambda <-function(t,y){y[1]} # lambda is a function constant over time 
     f.mu     <-function(t,y){y[1]} # mu is a function constant over time 
-    lambda_par <- c(.2)  # initial value for lambda
-    mu_par     <- c(.1)  # initial value for mu
+    lambda_par <- c(.5)  # initial value for lambda
+    mu_par     <- c(.4)  # initial value for mu
     
     # RPANDA - Infer lambda & mu 
     if (type == "all" | type == "rpanda"){
       fit.rpanda <- RPANDA::fit_bd(tree, height, f.lambda, f.mu, lambda_par, mu_par, 
                                    cst.lamb = TRUE, cst.mu = TRUE) # fit bd model 
       pred.rpanda.lambda <- fit.rpanda$lamb_par # get lambda prediction 
-      pred.rpanda.mu     <- fit.rpanda$mu_par # get mu prediction 
+      pred.rpanda.mu     <- abs(fit.rpanda$mu_par) # get mu prediction 
       vec.pred.rpanda.lambda <- c(vec.pred.rpanda.lambda,
                                   pred.rpanda.lambda) # store lambda prediction
       vec.pred.rpanda.mu     <- c(vec.pred.rpanda.mu,
@@ -392,7 +408,7 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   }
   
   else if (type == "ape"){
-    pred.list <- list(vec.pred.ape.lambda, vec.diversitree.ape.mu)
+    pred.list <- list(vec.pred.ape.lambda, vec.pred.ape.mu)
   }
   
   else if (type == "all"){
@@ -404,11 +420,11 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   else{print("Error: type unkown. Type should be either: 'rpanda', 'diversitree', 'ape' or 'all'.")}
   
   
-  if (is.na(fname)){
+  if (save & is.na(fname)){
     path <- "figures/mle/"
     fname <- paste("mle", type, "ntaxa", n_taxa,
                    "lambda", lambda_range[1], lambda_range[2], 
-                   "mu", mu_range[1], mu_range[2],
+                   "epsilon", mu_range[1], mu_range[2],
                    "ntest", n_trees, sep="-")
     fname <- paste(path, fname, sep="")
   }
@@ -419,7 +435,7 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
 }
 
 
-get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, mu_range,
+get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, epsilon_range,
                                    ss_check){
   
   dir <- "trees-dataset/"
@@ -436,6 +452,78 @@ get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, mu_range,
                  "mu"     = fname.mu)
   
   return(fnames)
+  
+}
+
+
+
+save_dataset <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
+                         lambda_range, epsilon_range, ss_check){
+  
+  # Getting file names to save 
+  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, epsilon_range,
+                                   ss_check)
+  fname.trees  <- fnames$trees
+  fname.lambda <- fnames$lambda
+  fname.mu     <- fnames$mu
+  
+  # Saving data 
+  cat("Saving data...\n")
+  saveRDS(trees, fname.trees)
+  cat(paste(fname.trees, " saved.\n", sep=""))
+  saveRDS(vec.lambda, fname.lambda)
+  cat(paste(fname.lambda, " saved.\n", sep=""))
+  saveRDS(vec.mu, fname.mu)
+  cat(paste(fname.mu, " saved.\n", sep=""))
+  cat("Saving data... Done.\n")
+  
+}
+
+
+load_dataset <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check){
+  
+  # Getting file names to load 
+  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, mu_range,
+                                   ss_check)
+  fname.trees  <- fnames$trees
+  fname.lambda <- fnames$lambda
+  fname.mu     <- fnames$mu
+  
+  # Loading data 
+  cat("Loading data...\n")
+  trees <- readRDS(fname.trees)
+  cat(paste(fname.trees, " loaded.\n", sep=""))
+  vec.lambda <- readRDS(fname.lambda)
+  cat(paste(fname.lambda, " loaded.\n", sep=""))
+  vec.mu <- readRDS(fname.mu)
+  cat(paste(fname.mu, " loaded.\n", sep=""))
+  cat("Loading data... Done.\n")
+  
+  out <- list("trees" = trees, "lambda" = vec.lambda, "mu" = vec.mu)
+  
+  return(out)
+  
+}
+
+
+create_predictions_plot_fname <- function(n_trees, n_taxa, lambda_range, 
+                                          epsilon_range, directory, type, 
+                                          n_layer = NA, n_hidden = NA,
+                                          n_train = NA){
+  
+  fname <- paste("ntaxa", n_taxa,
+                 "lambda", lambda_range[1], lambda_range[2], 
+                 "espilon", epsilon_range[1], epsilon_range[2],
+                 "ntest", n_test, sep="-")
+  
+  if (type == "nn"){
+    fname <- paste(fname, "nlayer", n_layer, "nhidden", n_hidden,
+                   "ntrain", n_train, sep = "-")
+  }
+  
+  fname <- paste(dir, fname, sep = "")
+  
+  return(fname)
   
 }
 

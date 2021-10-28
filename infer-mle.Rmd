@@ -17,7 +17,6 @@ library(ggplot2)
 library(bbmle)
 library(svMisc)
 source("infer-general-functions.R")
-source("infer-mle.R")
 ```
 
 
@@ -101,20 +100,20 @@ plot(vec.lambda, ll.profile.lambda)
 
 ```{r}
 # Parameters 
-n_trees <- 50   # number of trees to generate 
+n_trees <- 500   # number of trees to generate 
 n_taxa  <- 100  # number of taxa of each tree 
-lambda_range <- c(0.15, 0.25) # range within random lambda will be generated 
-mu_range <- c(0.0, 0.1)       # same for mu
+lambda_range  <- c(0.1, 1.0) # range within random lambda will be generated 
+epsilon_range <- c(0.0, 0.9) # same for mu
 
 # Generate the trees and save 
-out <- generate_trees(n_trees, n_taxa, lambda_range, mu_range, ss_check = TRUE)
+out <- generate_trees(n_trees, n_taxa, lambda_range, epsilon_range, ss_check = TRUE)
 trees <- out$trees # contains the phylogenetic trees generated 
 vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
 vec.true.mu     <- out$mu # contains the corresponding extinction rates 
 
 plot_mle_predictions(trees, vec.true.lambda, vec.true.mu,
-                     lambda_range, mu_range, 
-                     type = "diversitree", save = TRUE)
+                     lambda_range, epsilon_range, 
+                     type = "all", save = FALSE)
 
 ```
 
