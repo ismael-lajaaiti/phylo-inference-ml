@@ -12,12 +12,16 @@ ss_check <- TRUE
 out <- generate_trees(n_trees, n_taxa, lambda_range, epsilon_range,
                       ss_check = ss_check)
 
-
 # Extract output data 
 trees           <- out$trees
 vec.true.lambda <- out$lambda
 vec.true.mu     <- out$mu
 
+if (ss_check){
+  df.ss <- generate_ss_dataframe_from_trees(trees, vec.true.lambda, vec.true.mu)
+  save_dataset_summary_statistics(df.ss, n_trees, n_taxa, lambda_range, 
+                                  epsilon_range)
+}
 
 # Prepare saving - filenames 
 save_dataset(trees, vec.true.lambda, vec.true.mu,
