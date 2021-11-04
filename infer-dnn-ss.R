@@ -52,7 +52,7 @@ test_dl  <- test_ds  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 n_in      <- ncol(df) - 2 # number of neurons of the input layer 
 n_hidden  <- 20 # number of neurons in the hidden layers 
 p_dropout <- 0.01 # dropout probability 
-n_epochs  <- 100 # maximum number of epochs for the training 
+n_epochs  <- 5 # maximum number of epochs for the training 
 patience  <- 10 # patience of the early stopping 
 
 # Build the DNN 
@@ -95,7 +95,7 @@ cat("\nTraining DNN...")
 # Fit the DNN
 dnn.fit <- dnn %>%
   setup(
-    loss = function(y_hat, y_true) nnf_l1_loss(y_hat, y_true),
+    loss = function(y_hat, y_true) nnf_mse_loss(y_hat, y_true),
     optimizer = optim_adam
   ) %>%
   fit(train_dl, epochs = n_epochs, valid_data = valid_dl, 
@@ -105,14 +105,9 @@ cat("\nTraining DNN... Done.")
 
 cat("\nSaving model...")
 n_layer <- length(dnn()$parameters)/2 - 2 
-epochs <- length(dnn.fit$records$metrics$train)
-dir.model <- paste("neural-networks-models", nn_type, "", sep = "/")
-fname.model <- paste("ntaxa", n_taxa,
-                     "lambda", lambda_range[1], lambda_range[2], 
-                     "espilon", epsilon_range[1], epsilon_range[2],
-                     "nlayer", n_layer, "nhidden", n_hidden,
-                     "ntrain", n_train, "nepochs", epochs, sep = "-")
-fname.model <- paste(dir.model, fname.model, sep = "")
+# epochs <- length(dnn.fit$records$metrics$train)
+fname.model <- get_model_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range, 
+                                   n_layer, n_hidden, n_train)
 luz_save(dnn.fit, fname.model)
 cat(paste("\n", fname.model, " saved.", sep = ""))
 cat("\nSaving model... Done.")
@@ -138,13 +133,13 @@ fname.fig <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range,
 fname.fig <- paste(fname.fig, "-dnn-ss", sep = "")
 
 # Save neural network predictions 
-save_predictions(nn_type, pred.list, true.list, n_trees, n_taxa,
+save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
                   lambda_range, epsilon_range, n_test, n_layer, 
                   n_hidden, n_train)
 
 
 # Plot predictions (DNN and MLE)
 trees_test <- trees[test_indices] # test trees
-plot_together_nn_mle_predictions(pred.list, true.list, trees_test, n_trees, n_taxa, 
-                                 lambda_range, epsilon_range, nn_type = "DNN",
-                                 save = TRUE, fname = fname.fig)
+plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
+                                 lambda_range, epsilon_range, n_layer, n_hidden, n_train,
+                                 save = TRUE)

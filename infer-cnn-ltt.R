@@ -7,7 +7,7 @@ source("neural-network-functions.R")
 
 device <- "cuda:2" # GPU where to run computations 
 
-nn_type <- "rnn-ltt" # type of the model: Convolutional Neural Network w/ LTT
+nn_type <- "cnn-ltt" # type of the model: Convolutional Neural Network w/ LTT
 
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)

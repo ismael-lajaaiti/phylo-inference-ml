@@ -284,7 +284,7 @@ get_significant_code <- function(p_value){
 #' @examples
 plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu, 
                                  lambda_range, epsilon_range, type = "all", 
-                                 save = FALSE, fname = NA, alone = TRUE){
+                                 save = FALSE, alone = TRUE){
   
   n_trees <- length(trees)
   n_taxa  <- length(trees[[1]]$tip.label)
@@ -381,13 +381,9 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   else{print("Error: type unkown. Type should be either: 'rpanda', 'diversitree', 'ape' or 'all'.")}
   
   
-  if (save & is.na(fname)){
-    path <- "figures/mle/"
-    fname <- paste("mle", type, "ntaxa", n_taxa,
-                   "lambda", lambda_range[1], lambda_range[2], 
-                   "epsilon", epsilon_range[1], epsilon_range[2],
-                   "ntest", n_trees, sep="-")
-    fname <- paste(path, fname, sep="")
+  if (save){
+    fname <- get_plot_save_name("mle", n_trees, n_taxa, lambda_range, epsilon_range,
+                                n_test)
   }
   
   plot_pred_vs_true(pred.list, true.list, names, save = save, fname = fname, 
@@ -417,14 +413,16 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
 #' 
 #' @export
 #' @examples
-plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees,
-                                             n_trees, n_taxa,
-                                             lambda_range, epsilon_range, 
-                                             mle_package = "ape", nn_type = "NN",
-                                             save = FALSE, fname = NA){
+plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees, nn_type,
+                                             n_trees, n_taxa, lambda_range, epsilon_range,
+                                             n_layer, n_hidden, n_train, ker_size = NA,
+                                             mle_package = "ape", 
+                                             save = FALSE){
   
   if (save){
-    fname <- paste(fname, "pdf", sep=".")
+    n_test <- length(trees)
+    fname <- get_plot_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                n_test, n_layer, n_hidden, n_train, ker_size)
     aspect_ratio <- 1.62
     pdf(fname, width = 10, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
   }
@@ -447,6 +445,7 @@ plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees,
 
 
 #### end ####
+
 
 #### Generating, Converting, Saving and Loading ####
 
@@ -481,6 +480,9 @@ generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
   vec.true.lambda <- c() # vector where true lambda values will be stored
   vec.true.mu     <- c() # vector where true mu values will be stored 
   
+  print(n_taxa)
+  print(length(n_taxa))
+
   cat("Generation of trees...\n")
   
   while (length(trees) < n_trees){
@@ -488,7 +490,16 @@ generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
     true.lambda  <- runif(1, lambda_range[1] , lambda_range[2]) # generate random lambda
     epsilon      <- runif(1, epsilon_range[1], epsilon_range[2]) # generate random epsilon
     true.mu      <- epsilon * true.lambda # compute corresponding mu
-    tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
+    if (length(n_taxa) == 1){
+      tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
+    }
+    else if (length(n_taxa) == 2) {
+      true.n_taxa <- sample(n_taxa[1]:n_taxa[2], 1)
+      tree <- trees(c(true.lambda, true.mu), "bd",
+                    max.taxa=true.n_taxa)[[1]] # create the tree
+    }
+    else (cat("Error n_taxa should either be an integer, or a vector of size 2"))
+    
     
     # If checking that summary statistics have no NA
     if (ss_check){
@@ -656,16 +667,49 @@ convert_ltt_dataframe_to_dataset_cnn <- function(df.ltt, df.rates){
   return(ds.ltt)
 }
 
+get_backbone_save_name <- function(n_trees, n_taxa, lambda_range, epsilon_range){
+  
+  
+  if (length(n_taxa) == 1){
+    fname <- paste("ntrees", n_trees, "ntaxa", n_taxa,
+                   "lambda" , lambda_range[1] , lambda_range[2], 
+                   "epsilon", epsilon_range[1], epsilon_range[2], sep="-")
+  }
+  
+  else if (length(n_taxa) == 2){
+    fname <- paste("ntrees", n_trees, "ntaxa", n_taxa[1], n_taxa[2],
+                   "lambda" , lambda_range[1] , lambda_range[2], 
+                   "epsilon", epsilon_range[1], epsilon_range[2], sep="-")
+  }
+  
+  else {cat("Error length(n_taxa) should be either equal to 1 or 2. ")}
+  
+  return(fname)
+  
+}
 
 
-get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, epsilon_range,
-                                   ss_check){
+get_model_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                 n_layer, n_hidden, n_train, ker_size = NA){
+  
+  fname <- get_backbone_save_name(n_trees, n_taxa, lambda_range, epsilon_range)
+  fname.model <- paste(fname, "nlayer", n_layer, "nhidden", n_hidden, 
+                       "ntrain", n_train, sep = "-")
+  if (!is.na(ker_size)){fname.model <- paste(fname.model, "kersize", ker_size, sep = "-")}
+  dir <- paste("neural-networks-models", nn_type, "", sep = "/")
+  fname.model <- paste(dir, fname.model, sep = "")
+  return(fname.model)
+}
+
+
+get_dataset_save_name <- function(n_trees, n_taxa, lambda_range, epsilon_range,
+                                  ss_check){
   
   dir <- "trees-dataset/"
-  fname <- paste("ntrees", n_trees, "ntaxa", n_taxa,
-                 "lambda" , lambda_range[1] , lambda_range[2], 
-                 "epsilon", epsilon_range[1], epsilon_range[2], 
-                 "sscheck", ss_check, sep="-")
+  
+  fname <- get_backbone_save_name(n_trees, n_taxa, lambda_range, epsilon_range)
+  fname <- paste(fname, "sscheck", ss_check, sep = "-")
+  
   fname.trees  <- paste(dir, fname, "-trees.rds", sep="")
   fname.lambda <- paste(dir, fname, "-lambda.rds", sep="")
   fname.mu     <- paste(dir, fname, "-mu.rds", sep="")
@@ -744,7 +788,7 @@ save_dataset_trees <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
 load_dataset_trees <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check){
   
   # Getting file names to load 
-  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, mu_range,
+  fnames <- get_dataset_save_name(n_trees, n_taxa, lambda_range, mu_range,
                                    ss_check)
   fname.trees  <- fnames$trees
   fname.lambda <- fnames$lambda
@@ -784,8 +828,8 @@ load_dataset_trees <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check
 save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa,
                                             lambda_range, epsilon_range){
   
-  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, epsilon_range,
-                                     ss_check = TRUE)
+  fnames <- get_dataset_save_name(n_trees, n_taxa, lambda_range, epsilon_range,
+                                  ss_check = TRUE)
   fname.ss <- fnames$ss
   
   cat("Saving summary statistics data...\n")
@@ -813,8 +857,8 @@ save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa,
 load_dataset_summary_statistics <- function(n_trees, n_taxa,
                                             lambda_range, epsilon_range){
   
-  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, epsilon_range,
-                                   ss_check = TRUE)
+  fnames <- get_dataset_save_name(n_trees, n_taxa, lambda_range, epsilon_range,
+                                  ss_check = TRUE)
   fname.ss <- fnames$ss
   
   cat("Loading summary statistics data...\n")
@@ -826,37 +870,28 @@ load_dataset_summary_statistics <- function(n_trees, n_taxa,
 }
 
 
-save_predictions <- function(nn_type, pred.list, true.list, n_trees, n_taxa,
+save_predictions <- function(pred.list, true.list, nn_type, n_trees, n_taxa,
                              lambda_range, epsilon_range, n_test, n_layer, 
-                             n_hidden, n_train){
+                             n_hidden, n_train, ker_size = NA){
   
   cat("Saving predictions...\n")
-  dir.pred <- paste("neural-networks-predictions", nn_type, "", sep="/")
   save.list <- list("pred" = pred.list, "true" = true.list)
-  fname.pred <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, 
-                                              epsilon_range, n_test,
-                                              dir.pred, "nn", n_layer = n_layer,
-                                              n_hidden = n_hidden, n_train = n_train)
-  fname.pred <- paste(fname.pred, "-", nn_type, ".rds", sep = "")
-  saveRDS(save.list, fname.pred)
+  fname.preds <- get_preds_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                          n_test, n_layer, n_hidden, n_train, ker_size)
+  saveRDS(save.list, fname.preds)
   cat("\nSaving predictions... Done.\n")
   
 }
 
 
-load_predictions <- function(nn_type, pred.list, true.list, n_trees, n_taxa,
+load_predictions <- function(nn_type, n_trees, n_taxa,
                              lambda_range, epsilon_range, n_test, n_layer, 
-                             n_hidden, n_train){
+                             n_hidden, n_train, ker_size = NA){
   
-  dir.pred <- paste("neural-networks-predictions", nn_type, "", sep="/")
-  save.list <- list("pred" = pred.list, "true" = true.list)
-  fname.pred <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, 
-                                              epsilon_range, n_test,
-                                              dir.pred, "nn", n_layer = n_layer,
-                                              n_hidden = n_hidden, n_train = n_train)
-  fname.pred <- paste(fname.pred, "-", nn_type, ".rds", sep = "")
+  fname.preds <- get_preds_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                     n_test, n_layer, n_hidden, n_train, ker_size)
   
-  save.list <- readRDS(fname.pred)
+  save.list <- readRDS(fname.preds)
   
   return(save.list)
   
@@ -883,28 +918,38 @@ load_predictions <- function(nn_type, pred.list, true.list, n_trees, n_taxa,
 #' 
 #' @export
 #' @examples
-create_predictions_plot_fname <- function(n_trees, n_taxa, lambda_range, 
-                                          epsilon_range, n_test, dir, type, 
-                                          n_layer = NA, n_hidden = NA,
-                                          n_train = NA, ker_size = NA){
+get_plot_save_name <- function(model_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                               n_test, n_layer = NA, n_hidden = NA, n_train = NA, ker_size = NA){
   
-  fname <- paste("ntaxa", n_taxa,
-                 "lambda", lambda_range[1], lambda_range[2], 
-                 "espilon", epsilon_range[1], epsilon_range[2],
-                 "ntest", n_test, sep="-")
-  
-  
-  if (type == "nn"){
-    fname <- paste(fname, "nlayer", n_layer, "nhidden", n_hidden,
-                   "ntrain", n_train, sep = "-")
+  fname <- get_backbone_save_name(n_trees, n_taxa, lambda_range, epsilon_range)
+
+  if (model_type != "mle") {
+    fname.plot <- paste(fname, "nlayer", n_layer, "nhidden", n_hidden, 
+                       "ntrain", n_train, sep = "-")
+    if (!is.na(ker_size)){fname.plot <- paste(fname.plot, "kersize", ker_size, sep = "-")}
   }
+
+  dir.plot <- paste("figures", model_type, "", sep = "/")
+  fname.plot <- paste(dir.plot, fname.plot, "-ntest-", n_test, sep = "")
+  fname.plot <- paste(fname.plot, "pdf", sep = ".")
   
-  if (!is.na(ker_size)){fname <- paste(fname, "kersize", ker_size, sep = "-")}
+  return(fname.plot)
   
-  fname <- paste(dir, fname, sep = "")
+}
+
+
+get_preds_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                 n_test, n_layer, n_hidden, n_train, ker_size = NA){
   
-  return(fname)
+  fname.plot <- get_plot_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                   n_test, n_layer, n_hidden, n_train, ker_size)
   
+  start <- nchar("figures") + nchar(nn_type) + 3
+  fname.preds <- substring(fname.plot, start, nchar(fname.plot) - 4)
+  dir.preds   <- paste("neural-networks-predictions", nn_type, "", sep = "/")
+  fname.preds <- paste(dir.preds, fname.preds, ".rds", sep = "")
+  
+  return(fname.preds)
 }
 
 

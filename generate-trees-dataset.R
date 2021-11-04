@@ -4,8 +4,8 @@ source("infer-general-functions.R")
 # Parameteres 
 lambda_range  <- c(0.1,1.0)
 epsilon_range <- c(0.0,0.9)
-n_trees  <- 100000
-n_taxa   <- 100
+n_trees  <- 10000
+n_taxa   <- c(100,400)
 ss_check <- TRUE
 
 # Generate trees 
@@ -24,7 +24,7 @@ if (ss_check){
 }
 
 # Prepare saving - filenames 
-save_dataset(trees, vec.true.lambda, vec.true.mu,
-             n_trees, n_taxa, lambda_range, epsilon_range, 
-             ss_check)
+save_dataset_trees(trees, vec.true.lambda, vec.true.mu,
+                   n_trees, n_taxa, lambda_range, epsilon_range, 
+                   ss_check)
 
