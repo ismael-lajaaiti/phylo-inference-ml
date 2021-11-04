@@ -8,11 +8,12 @@ library(ape)
 library(diversitree)
 library(RPANDA)
 library(MLmetrics)
+library(latex2exp)
 source("summary-statistics.R")
 
 #### end ####
 
-
+#### Operations on Rates ####
 
 #' Compute r and epsilon
 #'
@@ -128,31 +129,49 @@ get_lambda_mu_list <- function(list.r_epsilon){
 }
 
 
-get_mu_vec <- function(list.lambda_r){
-  vec.lambda <- list.lambda_r$lambda
-  vec.r      <- list.lambda_r$r
-  vec.mu     <- c()
-  n          <- length(vec.r)
-  
-  for (i in 1:n){
-    mu <- vec.lambda[i] - vec.r[i]
-    vec.mu <- c(vec.mu, mu)
-  }
-  
-  return(vec.mu)
-  
-}
+#### end ####
 
 
+#### Plotting ####
 
-plot_pred_vs_true <- function(pred.list, true.list, names,
-                              method = "model", save = FALSE, fname = "file-name",
+#' Plot predictions vs. truth
+#'
+#' Draw a scatter plot represented the predicted values by a model (e.g. DNN) 
+#' vs. the true values.
+#'
+#' @param pred.list list of vectors of predicted paremeters 
+#'                  $lambda is the vector of predicted values for lambda
+#'                  $mu is the vector of predicted values for mu
+#' @param true.list list of vectors of corresponding true values 
+#'                  $lambda is the vector of true values for lambda
+#'                  $mu is the vector of true values for mu
+#' @param save logical, should the plot be saved? (default = FALSE)
+#' @param fname if save = TRUE, name of the saved file (default = NA)
+#' @param r2_score logical, should the r2 score be printed in the plot? 
+#'                 (default = TRUE)
+#' @param mse_score logical, should the MSE be printed in the plot?
+#'                  (default = TRUE)
+#' @param lm_fit logical, should the scatter be fitted by a linear regression?
+#'               (default = TRUE)
+#' @param subtitles subtitle to print below plots (default = "")
+#' @param alone logical, is this function called to draw only one plot? 
+#'              (default = TRUE)
+#'              
+#' @return 
+#' 
+#' @export
+#' @examples
+plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname = NA,
                               r2_score = TRUE, mse_score = TRUE, 
-                              lm_fit = TRUE, subtitles = ""){
+                              lm_fit = TRUE, subtitles = "", alone = TRUE){
   
   n <- length(pred.list)
   n_row <- n %/% 2
   n_col <- 2
+  
+  lambda.lim <- c(0.05, 1.05) 
+  mu.lim <- c(0.,0.9)
+  lim <- list(lambda.lim, mu.lim)
   
   if (save){
     fname <- paste(fname, "pdf", sep=".")
@@ -160,33 +179,33 @@ plot_pred_vs_true <- function(pred.list, true.list, names,
     pdf(fname, width = 10, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
     }
   
-  par(mfrow=c(n_row,n_col))
+  if (alone){par(mfrow=c(n_row,n_col))}
   
   for (i in 1:n){
     
-    pred.name <- paste(names[[1 + (i-1)%%2]], method, sep=".") # parameter name
+    #pred.name <- paste(names[[1 + (i-1)%%2]], method, sep=".") # parameter name
     pred <- pred.list[[i]] # parameter prediction 
     true <- true.list[[1 + (i-1)%%2]] # parameter true 
-    
-    main <- paste(names[[1 + (i-1)%%2]])
     
     # Evaluate the R2 score of predictions vs. truth
     if (r2_score){
       r2 <- R2_Score(pred, true) # compute r2
       r2 <- format(round(r2, 3), nsmall = 3) # format r2 
-      main <- paste(main, " | r2 = ", r2, sep = "")
     }
     
     # Evaluate the MSE of predictions vs. truth 
     if (mse_score){
       mse <- MSE(pred, true) # compute mse 
       mse <- format(round(mse, 3), nsmall = 3) # format mse
-      main <- paste(main, " | mse = ", mse, sep = "")
     }
+    
+    rate_name <- names[[1 + (i-1)%%2]]
+    main <- create_main_plot_pred_vs_true(rate_name, r2_score, mse_score, r2, mse)
     
     # Scatter plot - Predictions vs. truth
     plot(true, pred, main = main,
-         sub = subtitles[1 + (i-1)%/%2])
+         sub = subtitles[1 + (i-1)%/%2], 
+         xlim = lim[[1 + (i-1)%%2]], ylim = lim[[1 + (i-1)%%2]])
 
     # Identity line (for the eye)
     abline(0, 1) # x -> y line (for the eye)
@@ -194,12 +213,21 @@ plot_pred_vs_true <- function(pred.list, true.list, names,
     # Linear fit of predictions vs. truth (to see significant trends)
     if (lm_fit){
       fit = lm(pred ~ true)
-      fit.scale = lm(pred ~ scale(true, scale = FALSE))
+      fit.scale = lm(pred - true ~ scale(true, scale = FALSE))
       sig = summary(fit)$coefficients[2,4]
       sig.scale = summary(fit.scale)$coefficients[2,4]
-      #print(summary(fit.scale))
+      coef <- as.numeric(summary(fit.scale)$coefficients[, 1])
+      p_intercept <- as.numeric(summary(fit.scale)$coefficients[1, 4])
+      p_slope     <- as.numeric(summary(fit.scale)$coefficients[2, 4])
+      sig_intercept <- get_significant_code(p_intercept)
+      sig_slope     <- get_significant_code(p_slope)
+      intercept <- round(coef[1], 3) 
+      slope     <- round(coef[2], 3) 
+      text      <- TeX(paste("$\\", slope, "^{", sig_slope, "} \\cdot x + ",
+                             intercept, "^{", sig_intercept, sep = ""))
       abline(fit, col="red", lty = ifelse(sig < .05,1,2))
-      abline(fit.scale, col="blue", lty = ifelse(sig < .05,1,2))
+      mtext(text, line = -2, adj = 0)
+      #abline(fit.scale, col="blue", lty = ifelse(sig < .05,1,2))
       
     }
   }
@@ -208,122 +236,55 @@ plot_pred_vs_true <- function(pred.list, true.list, names,
 }
 
 
-generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
-                           ss_check = TRUE){
+create_main_plot_pred_vs_true <- function(rate_name, r2_score, mse_score,
+                                          r2 = NA, mse = NA){
+  if (rate_name == "lambda"){main <- '$\\lambda$'}
+  else if (rate_name == "mu"){main <- '$\\mu$'}
+  if (r2_score){main <- paste(main, '| $r^2 = $', r2)}
+  if (mse_score){main <- paste(main, '| $MSE = $', mse)}
+  return(TeX(main))
+}
+
+
+get_significant_code <- function(p_value){
   
-  trees <- list() # initialize tree list where trees will be stored 
-  vec.true.lambda <- c() # vector where true lambda values will be stored
-  vec.true.mu     <- c() # vector where true mu values will be stored 
-  
-  cat("Generation of trees...\n")
-  
-  while (length(trees) < n_trees){
-    # Generate the phylogenetic tree 
-    true.lambda  <- runif(1, lambda_range[1] , lambda_range[2]) # generate random lambda
-    epsilon      <- runif(1, epsilon_range[1], epsilon_range[2]) # generate random epsilon
-    true.mu      <- epsilon * true.lambda # compute corresponding mu
-    tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
-    
-    # If checking that summary statistics have no NA
-    if (ss_check){
-      ss <- get_ss(tree) # compute summary statistics 
-      if (!any(is.na(ss))){ # if no NA values 
-        trees <- append(trees, list(tree)) # append the new tree to the list
-        vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
-        vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
-        progress(length(trees), n_trees, progress.bar = TRUE,
-                 init = (length(trees)==1)) # print progression
-        }
-    }
-    
-    # Else just append the new tree to the list and save rtes 
-    else{
-      trees <- append(trees, list(tree))
-      vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
-      vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
-      progress(length(trees), n_trees, progress.bar = TRUE,
-               init = (length(trees)==1)) # print progression
-      }
-    
-  }
-  
-  cat("\nGeneration of trees... Done.")
-  
-  # Prepare output containing: trees list, true lambda vector, true mu vector.
-  out <- list("trees"  = trees, 
-              "lambda" = vec.true.lambda,
-              "mu"     = vec.true.mu)
-  
-  return(out)
+  s_code <- ""
+  if (p_value < 0.001){s_code <- "***"}
+  else if (p_value < 0.01){s_code <- "**"}
+  else if (p_value < 0.05){s_code <- "*"}
+  return(s_code)
   
 }
 
 
-generate_ltt_dataframe <- function(trees, n_taxa, vec.lambda, vec.mu){
-  
-  n_trees  <- length(trees) # number of trees 
-  df.ltt   <- data.frame("tree1" = rep(NA,n_taxa)) # initialize df.ltt
-  df.rates <- data.frame("lambda" = rep(NA, n_trees), # initialize df.rates
-                         "mu" = rep(NA, n_trees)) 
-  df.rates$lambda <- vec.lambda # fill lambda column w/ corresponding values
-  df.rates$mu     <- vec.mu # fill mu column w/ corresponding values 
-  
-  cat("Creating LTT dataframe...\n")
-  
-  for (i in 1:n_trees){
-    tree <- trees[[i]] # get tree 
-    ltt.coord <- ape::ltt.plot.coords(tree) # get ltt coordinates 
-    ltt.coord <- as.data.frame(ltt.coord)
-    df.ltt[paste("tree", i, sep = "")] <- ltt.coord$time
-    progress(i, n_trees, progress.bar = TRUE, init = (i==1))
-  }
-  
-  cat("\nCreating LTT dataframe... Done.")
 
-  out <- list("ltt" = df.ltt, "rates" = df.rates) # function output
-  
-  return(out)
-  
-}
-
-convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates){
-  
-  ds.ltt <- torch::dataset(
-    name <- "ltt_dataset", 
-    initialize = function(df.ltt, df.rates){
-      
-      array.ltt <- df.ltt %>% 
-        as.matrix() %>% 
-        array(dim = c(n_taxa, ncol(df.ltt), 1)) # convert df to array of good dimension
-      
-      # input data 
-      x <- array.ltt
-      self$x <- x
-      
-      # target data 
-      target.names <- c("lambda", "mu")
-      y = df.rates[target.names] %>% 
-        as.matrix()
-      self$y <- torch_tensor(y)
-      
-    }, 
-    
-    .getitem = function(i) {
-      list(x = self$x[i, , ,drop=TRUE], y = self$y[i, ])
-    }, 
-    
-    .length = function() {
-      self$y$size()[[1]]
-    }
-  )
-  
-  return(ds.ltt)
-}
-
-
+#' Plot the predictions of rates given by MLE
+#'
+#' Given a list of trees and their true rates, plot the predictions vs. truth
+#' where the predictions are obtained by the MLE method.
+#'
+#' @param trees list of trees 
+#' @param vec.true.lambda vector containing the true speciation rates
+#' @param vec.true.mu vector containg the true extinction rates 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#' @param type which package to use for the MLE predictions 
+#'             either {"ape", "diversitree", "rpanda", "all"}
+#'             if "all" use the three packages (ape, diversitree, rpanda) to 
+#'             do the predictions
+#'             else use only the given package 
+#'             (default = "all")
+#' @param save logical, should the plot be saved? (default = FALSE)
+#' @param fname if save, name of saved file (default = NA)
+#' @param alone logical, are the MLE predictions plotted alone or not?
+#'              
+#' @return 
+#' 
+#' @export
+#' @examples
 plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu, 
                                  lambda_range, epsilon_range, type = "all", 
-                                 save = FALSE, fname = NA){
+                                 save = FALSE, fname = NA, alone = TRUE){
   
   n_trees <- length(trees)
   n_taxa  <- length(trees[[1]]$tip.label)
@@ -397,7 +358,7 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   
   
   if (type == "all"){subtitles <- list("rpanda", "diversitree", "ape")}
-  else{subtitles <- list("")}
+  else{subtitles <- list(paste("MLE:", type), paste("MLE:", type))}
   
   if (type == "rpanda"){
     pred.list <- list(vec.pred.rpanda.lambda, vec.pred.rpanda.mu)
@@ -424,15 +385,277 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
     path <- "figures/mle/"
     fname <- paste("mle", type, "ntaxa", n_taxa,
                    "lambda", lambda_range[1], lambda_range[2], 
-                   "epsilon", mu_range[1], mu_range[2],
+                   "epsilon", epsilon_range[1], epsilon_range[2],
                    "ntest", n_trees, sep="-")
     fname <- paste(path, fname, sep="")
   }
   
-  plot_pred_vs_true(pred.list, true.list, names, "mle", save = save, fname = fname, 
-                    subtitle = subtitles)
+  plot_pred_vs_true(pred.list, true.list, names, save = save, fname = fname, 
+                    subtitle = subtitles, alone = alone)
   
 }
+
+
+#' Plot together predictions from Neural Networks and MLE 
+#' 
+#'
+#' @param pred.nn.list list of predicted parameters by the Neural Network
+#' @param true.list true values of the parameters 
+#' @param trees list of trees on which the predictions of rates have been made
+#' @param n_trees number of trees in trees 
+#' @param n_taxa size of the trees 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#' @param mle_package which MLE package to use (either "ape", "diversitree", "rpanda")
+#'                    (default = "ape")
+#' @param nn_type type of Neural Network (e.g. CNN, DNN, RNN) (default = "NN")
+#' @param save logical, should the plot be saved? (default = FALSE)
+#' @param fname if save, file name
+#' 
+#'              
+#' @return fname, file name of the prediction pots 
+#' 
+#' @export
+#' @examples
+plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees,
+                                             n_trees, n_taxa,
+                                             lambda_range, epsilon_range, 
+                                             mle_package = "ape", nn_type = "NN",
+                                             save = FALSE, fname = NA){
+  
+  if (save){
+    fname <- paste(fname, "pdf", sep=".")
+    aspect_ratio <- 1.62
+    pdf(fname, width = 10, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
+  }
+  
+  name.list <- list("lambda", "mu")
+  
+  par(mfrow=c(2,2))
+  plot_pred_vs_true(pred.nn.list, true.list, name.list,
+                    subtitles = c(nn_type, nn_type), save = FALSE,
+                    alone = FALSE)
+  vec.true.lambda <- true.list[[1]]
+  vec.true.mu     <- true.list[[2]]
+  plot_mle_predictions(trees, vec.true.lambda, vec.true.mu, 
+                       lambda_range, epsilon_range, 
+                       type = mle_package, save = FALSE, alone = FALSE)
+  
+  if (save){dev.off()}
+  
+}
+
+
+#### end ####
+
+#### Generating, Converting, Saving and Loading ####
+
+#' Generate phylogenetic trees 
+#'
+#' Create a given number of trees of a choosen size and rates. This trees are
+#' stored in a list.
+#'
+#' @param n_trees number of trees to generate 
+#' @param n_taxa size of the trees 
+#' @param lambda_range vector containg the min and max of the speciation rates 
+#'                     of the trees generated. For each trees the speciation 
+#'                     rate will randomly drawn in this interval
+#' @param lambda_range vector containg the min and max of the turnover rates 
+#'                     of the trees generated. For each trees the turnover 
+#'                     rate will randomly drawn in this interval
+#' @param ss_check logical, should we check that the summary statistics 
+#'                 corresponding to the generated trees doesn't contain any NA
+#'                 values (default = TRUE)
+#'              
+#' @return out list of outputs 
+#'         $trees -> trees, the list of the generated trees 
+#'         $lambda -> vec.lambda, vector of speciation rates of the generated trees
+#'         $mu -> vec.mu, vector of extinction rates of generated trees
+#' 
+#' @export
+#' @examples
+generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
+                           ss_check = TRUE){
+  
+  trees <- list() # initialize tree list where trees will be stored 
+  vec.true.lambda <- c() # vector where true lambda values will be stored
+  vec.true.mu     <- c() # vector where true mu values will be stored 
+  
+  cat("Generation of trees...\n")
+  
+  while (length(trees) < n_trees){
+    # Generate the phylogenetic tree 
+    true.lambda  <- runif(1, lambda_range[1] , lambda_range[2]) # generate random lambda
+    epsilon      <- runif(1, epsilon_range[1], epsilon_range[2]) # generate random epsilon
+    true.mu      <- epsilon * true.lambda # compute corresponding mu
+    tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
+    
+    # If checking that summary statistics have no NA
+    if (ss_check){
+      ss <- get_ss(tree) # compute summary statistics 
+      if (!any(is.na(ss))){ # if no NA values 
+        trees <- append(trees, list(tree)) # append the new tree to the list
+        vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
+        vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
+        progress(length(trees), n_trees, progress.bar = TRUE,
+                 init = (length(trees)==1)) # print progression
+        }
+    }
+    
+    # Else just append the new tree to the list and save rtes 
+    else{
+      trees <- append(trees, list(tree))
+      vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
+      vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
+      progress(length(trees), n_trees, progress.bar = TRUE,
+               init = (length(trees)==1)) # print progression
+      }
+    
+  }
+  
+  cat("\nGeneration of trees... Done.")
+  
+  # Prepare output containing: trees list, true lambda vector, true mu vector.
+  out <- list("trees"  = trees, 
+              "lambda" = vec.true.lambda,
+              "mu"     = vec.true.mu)
+  
+  return(out)
+  
+}
+
+
+#' Generate a data.frame containing Lineage Through Time of phylo trees
+#'
+#' Given a list of phylo trees, returns their LTT in a data.frame
+#'
+#' @param trees list of phylo trees
+#' @param n_taxa size of the trees 
+#' @param vec.lambda vector of the corresponding speciation rates of the
+#'                   generated trees 
+#' @param vec.mu vector of the corresponding extinction rates of the
+#'                   generated trees                   
+#'              
+#' @return out list of outputs
+#'         $ltt -> df.ltt data.frame containing the LTT of the trees 
+#'                i'th column contains the LTT of the i'th tree
+#'         $rates -> df.rates data.frame containing the speciation and extinction rates  
+#' 
+#' @export
+#' @examples
+generate_ltt_dataframe <- function(trees, n_taxa, vec.lambda, vec.mu){
+  
+  n_trees  <- length(trees) # number of trees 
+  df.ltt   <- data.frame("tree1" = rep(NA,n_taxa)) # initialize df.ltt
+  df.rates <- data.frame("lambda" = rep(NA, n_trees), # initialize df.rates
+                         "mu" = rep(NA, n_trees)) 
+  df.rates$lambda <- vec.lambda # fill lambda column w/ corresponding values
+  df.rates$mu     <- vec.mu # fill mu column w/ corresponding values 
+  
+  cat("Creating LTT dataframe...\n")
+  
+  for (i in 1:n_trees){
+    tree <- trees[[i]] # get tree 
+    ltt.coord <- ape::ltt.plot.coords(tree) # get ltt coordinates 
+    ltt.coord <- as.data.frame(ltt.coord)
+    df.ltt[paste("tree", i, sep = "")] <- ltt.coord$time
+    progress(i, n_trees, progress.bar = TRUE, init = (i==1))
+  }
+  
+  cat("\nCreating LTT dataframe... Done.")
+
+  out <- list("ltt" = df.ltt, "rates" = df.rates) # function output
+  
+  return(out)
+  
+}
+
+
+#' Convert a LTT data.frame into a torch dataset 
+#'
+#' Given LTT data.frame and a data.frame containing rates (targets to infer)
+#' create the corresponding torch dataset 
+#'
+#' @param df.ltt data.frame containing LTT (created by generate_ltt_dataframe)
+#' @param df.rates data.frame containing rates (created by generated_ltt_dataframe)
+#' @param vec.lambda vector of the corresponding speciation rates of the
+#'              
+#' @return torch dataset 
+#'         $x -> LTT contained in df.ltt
+#'         $y -> corresponding rates contained in df.rates (targets)
+#' 
+#' @export
+#' @examples
+convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates){
+  
+  ds.ltt <- torch::dataset(
+    name <- "ltt_dataset", 
+    initialize = function(df.ltt, df.rates){
+      
+      array.ltt <- df.ltt %>% 
+        as.matrix() %>% 
+        array(dim = c(nrow(df.ltt), ncol(df.ltt), 1)) # convert df to array of good dimension
+      
+      # input data 
+      x <- array.ltt
+      self$x <- x
+      
+      # target data 
+      target.names <- c("lambda", "mu")
+      y = df.rates[target.names] %>% 
+        as.matrix()
+      self$y <- torch_tensor(y)
+      
+    }, 
+    
+    .getitem = function(i) {
+      list(x = self$x[,i ,], y = self$y[i, ])
+    }, 
+    
+    .length = function() {
+      self$y$size()[[1]]
+    }
+  )
+  
+  return(ds.ltt)
+}
+
+
+
+convert_ltt_dataframe_to_dataset_cnn <- function(df.ltt, df.rates){
+  
+  ds.ltt <- torch::dataset(
+    name <- "ltt_dataset", 
+    initialize = function(df.ltt, df.rates){
+      
+      array.ltt <- df.ltt %>% 
+        as.matrix() %>% 
+        torch_tensor() # convert df to array of good dimension
+      
+      # input data 
+      x <- array.ltt
+      self$x <- x
+      
+      # target data 
+      target.names <- c("lambda", "mu")
+      y = df.rates[target.names] %>% 
+        as.matrix()
+      self$y <- torch_tensor(y)
+      
+    }, 
+    
+    .getitem = function(i) {
+      list(x = self$x[ , i]$unsqueeze(1), y = self$y[i, ])
+    }, 
+    
+    .length = function() {
+      self$y$size()[[1]]
+    }
+  )
+  
+  return(ds.ltt)
+}
+
 
 
 get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, epsilon_range,
@@ -446,18 +669,37 @@ get_dataset_save_names <- function(n_trees, n_taxa, lambda_range, epsilon_range,
   fname.trees  <- paste(dir, fname, "-trees.rds", sep="")
   fname.lambda <- paste(dir, fname, "-lambda.rds", sep="")
   fname.mu     <- paste(dir, fname, "-mu.rds", sep="")
+  fname.ss     <- paste(dir, fname, "-ss.rds", sep="")
   
   fnames <- list("trees"  = fname.trees, 
                  "lambda" = fname.lambda, 
-                 "mu"     = fname.mu)
+                 "mu"     = fname.mu,
+                 "ss"     = fname.ss)
   
   return(fnames)
   
 }
 
 
-
-save_dataset <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
+#' Save generated trees and their rates 
+#'
+#' Given a list of trees and their rates, those are saved using saveRDS function
+#'
+#' @param trees list of trees 
+#' @param vec.lambda vector containing the speciation rates
+#' @param vec.mu vector containg the extinction rates 
+#' @param n_trees number of trees in trees 
+#' @param n_taxa size of the trees 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#' @param ss_check logical, have we check that the trees generated doesn't 
+#'                 give NA values for the summary statistics
+#'              
+#' @return 
+#' 
+#' @export
+#' @examples
+save_dataset_trees <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
                          lambda_range, epsilon_range, ss_check){
   
   # Getting file names to save 
@@ -480,7 +722,26 @@ save_dataset <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
 }
 
 
-load_dataset <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check){
+#' Load trees list and rates vector
+#'
+#' Load a saved list of trees and corresponding rates, 
+#' given the information needed to recover their names
+#'
+#' @param n_trees number of trees in trees 
+#' @param n_taxa size of the trees 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#' @param ss_check ss_check logical, have we check that the trees generated doesn't 
+#'                 give NA values for the summary statistics
+#'              
+#' @return out list of outputs 
+#'         $trees -> trees, the list of the generated trees 
+#'         $lambda -> vec.lambda, vector of speciation rates of the generated trees
+#'         $mu -> vec.mu, vector of extinction rates of generated trees
+#' 
+#' @export
+#' @examples
+load_dataset_trees <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check){
   
   # Getting file names to load 
   fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, mu_range,
@@ -506,26 +767,151 @@ load_dataset <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check){
 }
 
 
+#' Save computed trees summary statistics data.frame
+#'
+#' 
+#'
+#' @param df.ss data.frame containing the summary statics and rates of several trees
+#' @param n_trees number of trees in trees 
+#' @param n_taxa size of the trees 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#'              
+#' @return 
+#' 
+#' @export
+#' @examples
+save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa,
+                                            lambda_range, epsilon_range){
+  
+  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, epsilon_range,
+                                     ss_check = TRUE)
+  fname.ss <- fnames$ss
+  
+  cat("Saving summary statistics data...\n")
+  saveRDS(df.ss, fname.ss)
+  cat(paste(fname.ss, " saved.\n", sep=""))
+  cat("Saving summary statistics data... Done.\n")
+  
+}
+
+
+#' Load a saved summary statistics data.frame
+#'
+#' Load a summary statistics data.frame, given the information needed to recover
+#' its name 
+#'
+#' @param n_trees number of trees in trees 
+#' @param n_taxa size of the trees 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#'              
+#' @return df.ss summary statistics data.frame
+#' 
+#' @export
+#' @examples
+load_dataset_summary_statistics <- function(n_trees, n_taxa,
+                                            lambda_range, epsilon_range){
+  
+  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, epsilon_range,
+                                   ss_check = TRUE)
+  fname.ss <- fnames$ss
+  
+  cat("Loading summary statistics data...\n")
+  df.ss <- readRDS(fname.ss)
+  cat("Loading summary statistics data... Done.\n")
+  
+  return(df.ss)
+  
+}
+
+
+save_predictions <- function(nn_type, pred.list, true.list, n_trees, n_taxa,
+                             lambda_range, epsilon_range, n_test, n_layer, 
+                             n_hidden, n_train){
+  
+  cat("Saving predictions...\n")
+  dir.pred <- paste("neural-networks-predictions", nn_type, "", sep="/")
+  save.list <- list("pred" = pred.list, "true" = true.list)
+  fname.pred <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, 
+                                              epsilon_range, n_test,
+                                              dir.pred, "nn", n_layer = n_layer,
+                                              n_hidden = n_hidden, n_train = n_train)
+  fname.pred <- paste(fname.pred, "-", nn_type, ".rds", sep = "")
+  saveRDS(save.list, fname.pred)
+  cat("\nSaving predictions... Done.\n")
+  
+}
+
+
+load_predictions <- function(nn_type, pred.list, true.list, n_trees, n_taxa,
+                             lambda_range, epsilon_range, n_test, n_layer, 
+                             n_hidden, n_train){
+  
+  dir.pred <- paste("neural-networks-predictions", nn_type, "", sep="/")
+  save.list <- list("pred" = pred.list, "true" = true.list)
+  fname.pred <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, 
+                                              epsilon_range, n_test,
+                                              dir.pred, "nn", n_layer = n_layer,
+                                              n_hidden = n_hidden, n_train = n_train)
+  fname.pred <- paste(fname.pred, "-", nn_type, ".rds", sep = "")
+  
+  save.list <- readRDS(fname.pred)
+  
+  return(save.list)
+  
+}
+
+
+#' Create file name for the prediction plots 
+#'
+#'
+#' @param n_trees number of trees in trees 
+#' @param n_taxa size of the trees 
+#' @param lambda_range range in which the speciation rates have been generated
+#' @param epsilon_range range in which the turnover rates have been generated 
+#' @param n_test number of tested predictions
+#' @param dir directory where the file will be saved 
+#' @param type if the model is a neural network, type should be "nn" such that,
+#'             relevant informations will be added to the file name
+#' @param n_layer if type="nn", number of layer of the neural network (default = NA)
+#' @param n_hidden if type="nn", number of neurons in hidden layeres (default = NA)
+#' @param n_train if type="nn", size of the training set (default = NA)
+#' 
+#'              
+#' @return fname, file name of the prediction pots 
+#' 
+#' @export
+#' @examples
 create_predictions_plot_fname <- function(n_trees, n_taxa, lambda_range, 
-                                          epsilon_range, directory, type, 
+                                          epsilon_range, n_test, dir, type, 
                                           n_layer = NA, n_hidden = NA,
-                                          n_train = NA){
+                                          n_train = NA, ker_size = NA){
   
   fname <- paste("ntaxa", n_taxa,
                  "lambda", lambda_range[1], lambda_range[2], 
                  "espilon", epsilon_range[1], epsilon_range[2],
                  "ntest", n_test, sep="-")
   
+  
   if (type == "nn"){
     fname <- paste(fname, "nlayer", n_layer, "nhidden", n_hidden,
                    "ntrain", n_train, sep = "-")
   }
+  
+  if (!is.na(ker_size)){fname <- paste(fname, "kersize", ker_size, sep = "-")}
   
   fname <- paste(dir, fname, sep = "")
   
   return(fname)
   
 }
+
+
+#### end #### 
+
+
+
 
 
 

@@ -7,6 +7,8 @@ source("infer-general-functions.R")
 source("neural-network-functions.R")
 
 
+nn_type <- "dnn-ss" # type of the model: Deep Neural Network w/ Summary Statistics
+
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)
 n_taxa  <- 100 # size of the trees
@@ -15,14 +17,15 @@ epsilon_range <- c(0.0, 0.9) # range of epsilon values
 ss_check <- TRUE
 
 # Generate the trees and save 
-out   <- load_dataset(n_trees, n_taxa, lambda_range, epsilon_range,
+out   <- load_dataset_trees(n_trees, n_taxa, lambda_range, epsilon_range,
                       ss_check = ss_check)
 trees           <- out$trees # contains the phylogenetic trees generated 
 vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
 vec.true.mu     <- out$mu # contains the corresponding extinction rates 
 
 # Create the corresponding summary statistics data.frame
-df <- generate_ss_dataframe_from_trees(trees, vec.true.lambda, vec.true.mu)
+df <- load_dataset_summary_statistics(n_trees, n_taxa, lambda_range,
+                                      epsilon_range)
 
 # Parameters of the NN's training
 n_train    <- 9000
@@ -47,10 +50,10 @@ test_dl  <- test_ds  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 
 # DNN parameters 
 n_in      <- ncol(df) - 2 # number of neurons of the input layer 
-n_hidden  <- 50 # number of neurons in the hidden layers 
+n_hidden  <- 20 # number of neurons in the hidden layers 
 p_dropout <- 0.01 # dropout probability 
 n_epochs  <- 100 # maximum number of epochs for the training 
-patience  <- 7 # patience of the early stopping 
+patience  <- 10 # patience of the early stopping 
 
 # Build the DNN 
 dnn <- nn_module(
@@ -61,7 +64,8 @@ dnn <- nn_module(
     self$fc1 <- nn_linear(in_features = n_in, out_features = n_hidden)
     self$fc2 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
     self$fc3 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
-    self$fc4 <- nn_linear(in_features = n_hidden, out_features = 2)
+    self$fc4 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+    self$fc5 <- nn_linear(in_features = n_hidden, out_features = 2)
   }, 
   
   forward = function(x){
@@ -78,7 +82,11 @@ dnn <- nn_module(
       nnf_relu() %>%
       nnf_dropout(p = p_dropout) %>%
       
-      self$fc4()
+      self$fc4() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      
+      self$fc5()
   }
 )
 
@@ -95,6 +103,21 @@ dnn.fit <- dnn %>%
 
 cat("\nTraining DNN... Done.")
 
+cat("\nSaving model...")
+n_layer <- length(dnn()$parameters)/2 - 2 
+epochs <- length(dnn.fit$records$metrics$train)
+dir.model <- paste("neural-networks-models", nn_type, "", sep = "/")
+fname.model <- paste("ntaxa", n_taxa,
+                     "lambda", lambda_range[1], lambda_range[2], 
+                     "espilon", epsilon_range[1], epsilon_range[2],
+                     "nlayer", n_layer, "nhidden", n_hidden,
+                     "ntrain", n_train, "nepochs", epochs, sep = "-")
+fname.model <- paste(dir.model, fname.model, sep = "")
+luz_save(dnn.fit, fname.model)
+cat(paste("\n", fname.model, " saved.", sep = ""))
+cat("\nSaving model... Done.")
+
+
 # Evaluate DNN performance w/ predictions 
 preds           <- predict(dnn.fit, test_dl)$to(device = "cpu") # get DNN preds
 vec.pred.lambda <- as.matrix(preds)[,1] # extract lambda predictions 
@@ -104,23 +127,24 @@ vec.true.mu     <- df$mu[test_indices] # corresponding mu true values
 
 # Prepare plots 
 name.list <- list("lambda", "mu")
-true.list <- list(vec.true.lambda, vec.true.mu)
-pred.list <- list(vec.pred.lambda, vec.pred.mu)
+true.list <- list("lambda" = vec.true.lambda, "mu" = vec.true.mu)
+pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
 
-n_layer <- length(dnn()$parameters)/2 - 2 
-dir <- "figures/dnn-ss/"
-fname <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, epsilon_range,
-                              dir, "nn", n_layer = n_layer,
-                              n_hidden = n_hidden, n_train = n_train)
-fname.dnn <- paste(fname, "-dnn-ss", sep = "")
-fname.mle <- paste(fname, "-mle", sep = "")
+dir.fig <- "figures/dnn-ss/"
+fname.fig <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range,
+                                           epsilon_range, n_test,
+                                           dir.fig, "nn", n_layer = n_layer,
+                                           n_hidden = n_hidden, n_train = n_train)
+fname.fig <- paste(fname.fig, "-dnn-ss", sep = "")
 
-# Plot DNN predictions 
-plot_pred_vs_true(pred.list, true.list, name.list, "dnn", save = TRUE, fname = fname.dnn)
+# Save neural network predictions 
+save_predictions(nn_type, pred.list, true.list, n_trees, n_taxa,
+                  lambda_range, epsilon_range, n_test, n_layer, 
+                  n_hidden, n_train)
 
-# Plot MLE predictions for comparison 
-trees <- trees[test_indices]
-plot_mle_predictions(trees, vec.true.lambda, vec.true.mu, 
-                     lambda_range, mu_range, 
-                     type = "ape",
-                     save = TRUE, fname = fname.mle)
+
+# Plot predictions (DNN and MLE)
+trees_test <- trees[test_indices] # test trees
+plot_together_nn_mle_predictions(pred.list, true.list, trees_test, n_trees, n_taxa, 
+                                 lambda_range, epsilon_range, nn_type = "DNN",
+                                 save = TRUE, fname = fname.fig)
