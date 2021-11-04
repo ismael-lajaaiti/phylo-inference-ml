@@ -40,6 +40,8 @@ vignettes/*.pdf
 
 figures
 
+trees-dataset
+
 neural-networks-models
 
 neural-networks-predictions
