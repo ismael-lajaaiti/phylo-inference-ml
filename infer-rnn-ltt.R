@@ -12,7 +12,7 @@ nn_type <- "rnn-ltt" # type of the model: Recurrent Neural Network w/ LTT
 
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)
-n_taxa  <- 100 # size of the trees
+n_taxa  <- c(100,1000) # size of the trees
 lambda_range  <- c(0.1, 1.) # range of lambda values 
 epsilon_range <- c(0.0, 0.9) # range of epsilon values 
 ss_check <- TRUE
@@ -47,14 +47,18 @@ train_ds <- ds.ltt(df.ltt[, train_indices], df.rates[train_indices, ])
 valid_ds <- ds.ltt(df.ltt[, valid_indices], df.rates[valid_indices, ])
 test_ds  <- ds.ltt(df.ltt[, test_indices] , df.rates[test_indices, ])
 
-# Creation of the dataloader 
-train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
-valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
-test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
+
+if (length(n_taxa) == 1){
+  # Creation of the dataloader 
+  train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
+  valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
+  test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
+}
+
 
 # Parameters of the RNN
-n_hidden  <- 50  # number of neurons in hidden layers 
-n_layer   <- 4   # number of stacked RNN layers 
+n_hidden  <- 500  # number of neurons in hidden layers 
+n_layer   <- 2   # number of stacked RNN layers 
 p_dropout <- .01 # dropout probability
 
 
@@ -80,6 +84,105 @@ rnn <- rnn.net(1, n_hidden, n_layer, p_dropout) # create the RNN
 rnn$to(device = device) # move the RNN to the choosen GPU 
 
 
+find_indices_same_size <- function(df.ltt, n_taxa){
+  list.indices <- list()
+  for (n in n_taxa[1]:n_taxa[2]){
+    list.indices[[as.character(n)]] <- c()
+  }
+  for(i in 1:ncol(df.ltt)){
+      n <- nrow(na.omit(df.ltt[i]))
+      list.indices[[as.character(n)]] <- c(list.indices[[as.character(n)]], i)
+  }
+  return(list.indices)
+}
+
+
+create_one_batch <- function(df.ltt, df.rates, indices){
+  
+  batch <- list("x" = NA, "y" = NA)
+  
+  inputs <- na.omit(df.ltt[indices]) %>%
+    as.matrix() %>% t() %>%
+    torch_tensor()
+  
+  targets <- df.rates[indices,] %>%
+    as.matrix %>%
+    torch_tensor()
+  
+  batch$x <- inputs
+  batch$y <- targets
+  
+  return(batch)
+  
+}
+
+
+create_all_batch <- function(df.ltt, df.rates, list.indices, n_taxa){
+  
+  list.batch <- list()
+  #n_iter <- sample(n_taxa[1]:n_taxa[2], length(n_taxa[1]:n_taxa[2]))
+  for (n in n_taxa[1]:n_taxa[2]){
+    indices <- list.indices[[as.character(n)]]
+    batch <- create_one_batch(df.ltt, df.rates, indices)
+    if (length(batch) != 0){
+      list.batch[[as.character(n)]] <- batch
+    }
+  }
+  return(list.batch)
+}
+
+
+
+reformat_test_batch <- function(test.batch){
+  
+  new.test.batch <- list()
+  n_test_batch <- length(test.batch)
+  
+  for (i in 1:n_test_batch){
+    batch <- test.batch[[i]]
+    n <- dim(batch$x)[1]
+    for (j in 1:n){
+      mini.batch <- list("x" = NA, "y" = NA)
+      input  <- batch$x[j,]
+      target <- batch$y[j,]
+      mini.batch$x <- input
+      mini.batch$y <- target 
+      new.test.batch[[length(new.test.batch) + 1]] <- mini.batch
+    }
+  }
+  
+  return(new.test.batch)
+}
+
+
+if (length(n_taxa) == 2){
+  list.batch <- create_all_batch(df.ltt, df.rates, list.indices, n_taxa)
+  n_batch <- length(list.batch)
+  n_train_batch <- 801
+  n_valid_batch <- 50
+  n_test_batch  <- 50
+  train_indices     <- sample(1:n_batch, n_train_batch)
+  not_train_indices <- setdiff(1:n_batch, n_train_batch)
+  valid_indices     <- sample(not_train_indices, n_valid_batch)
+  test_indices      <- setdiff(not_train_indides, valid_indices)
+  train.batch <- list()
+  valid.batch <- list()
+  test.batch  <- list()
+  for (i in 1:n_train_batch){
+    ind <- train_indices[i]
+    train.batch[[i]] <- list.batch[[ind]]
+  }
+  for (i in 1:n_valid_batch){
+    ind <- valid_indices[i]
+    valid.batch[[i]] <- list.batch[[ind]]
+  }
+  for (i in 1:n_test_batch){
+    ind <- test_indices[i]
+    test.batch[[i]] <- list.batch[[ind]] 
+  } 
+  test.batch <- reformat_test_batch(test.batch)
+}
+
 # Prepare training 
 
 opt <- optim_adam(params = rnn$parameters) # optimizer 
@@ -104,20 +207,32 @@ valid_batch <- function(b) {
 
 # Training loop 
 
-epoch     <- 1
+epoch  <- 1
 trigger   <- 0 
 last_loss <- 100
 
-while (epoch < n_epochs & trigger < patience) {
+while (epoch <= n_epochs & trigger < patience) {
   
   # Training part 
   rnn$train()
   train_loss <- c()
   
-  coro::loop(for (b in train_dl) {
-    loss <- train_batch(b)
-    train_loss <- c(train_loss, loss)
-  })
+  if (length(n_taxa) == 2){
+    random_iter <- sample(1:n_train_batch, n_train_batch)
+    coro::loop(for (i in random_iter) {
+      b <- train.batch[[i]]
+      loss <- train_batch(b)
+      train_loss <- c(train_loss, loss)
+    })
+  }
+  
+  else{
+    coro::loop(for (b in train_dl) {
+      loss <- train_batch(b)
+      train_loss <- c(train_loss, loss)
+    })
+  }
+  
   
   cat(sprintf("epoch %0.3d/%0.3d - train - loss: %3.5f \n",
               epoch, n_epochs, mean(train_loss)))
@@ -126,10 +241,22 @@ while (epoch < n_epochs & trigger < patience) {
   rnn$eval()
   valid_loss <- c()
   
-  coro::loop(for (b in test_dl) {
-    loss <- valid_batch(b)
-    valid_loss <- c(valid_loss, loss)
-  })
+  
+  if (length(n_taxa) == 2){
+    coro::loop(for (i in 1:n_valid_batch) {
+      b <- valid.batch[[i]]
+      loss <- valid_batch(b)
+      valid_loss <- c(valid_loss, loss)
+    })
+  }
+  
+  else{
+    coro::loop(for (b in valid_dl) {
+      loss <- valid_batch(b)
+      valid_loss <- c(valid_loss, loss)
+    })
+  }
+  
   
   current_loss <- mean(valid_loss)
   if (current_loss > last_loss){trigger <- trigger + 1}
@@ -145,13 +272,8 @@ while (epoch < n_epochs & trigger < patience) {
 
 # Saving model for reproducibility 
 cat("\nSaving model...")
-dir.model <- paste("neural-networks-models", nn_type, "", sep = "/")
-fname.model <- paste("ntaxa", n_taxa,
-                     "lambda", lambda_range[1], lambda_range[2], 
-                     "espilon", epsilon_range[1], epsilon_range[2],
-                     "nlayer", n_layer, "nhidden", n_hidden,
-                     "ntrain", n_train, "nepochs", n_epochs, sep = "-")
-fname.model <- paste(dir.model, fname.model, sep = "")
+fname.model <- get_model_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range, 
+                                   n_layer, n_hidden, n_train)
 torch_save(rnn, fname.model)
 cat(paste("\n", fname.model, " saved.", sep = ""))
 cat("\nSaving model... Done.")
@@ -165,15 +287,35 @@ vec.true.lambda <- c()
 vec.true.mu     <- c()
 
 # Compute predictions 
-coro::loop(for (b in test_dl) {
-  out <- rnn(b$x$reshape(c(b$x$shape, 1L))$to(device = device))
-  pred <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
-  true <- as.numeric(b$y)
-  vec.pred.lambda <- c(vec.pred.lambda, pred[1])
-  vec.pred.mu     <- c(vec.pred.mu, pred[2])
-  vec.true.lambda <- c(vec.true.lambda, true[1])
-  vec.true.mu     <- c(vec.true.mu, true[2])
-})
+
+if (length(n_taxa) == 2){
+  random_iter <- sample(1:length(test.batch), 500)
+  coro::loop(for (i in random_iter) {
+    b <- test.batch[[i]]
+    out <- rnn(b$x$unsqueeze(2)$unsqueeze(1)$to(device = device))
+    pred.lambda <- as.numeric(out[,1]$to(device = "cpu")) # move the tensor to CPU 
+    pred.mu     <- as.numeric(out[,2]$to(device = "cpu")) # move the tensor to CPU 
+    true.lambda <- as.numeric(b$y[1])
+    true.mu     <- as.numeric(b$y[2])
+    vec.pred.lambda <- c(vec.pred.lambda, pred.lambda)
+    vec.pred.mu     <- c(vec.pred.mu, pred.mu)
+    vec.true.lambda <- c(vec.true.lambda, true.lambda)
+    vec.true.mu     <- c(vec.true.mu, true.mu)
+  })
+}
+
+else {
+  coro::loop(for (b in test_dl) {
+    out <- rnn(b$x$reshape(c(b$x$shape, 1L))$to(device = device))
+    pred <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
+    true <- as.numeric(b$y)
+    vec.pred.lambda <- c(vec.pred.lambda, pred[1])
+    vec.pred.mu     <- c(vec.pred.mu, pred[2])
+    vec.true.lambda <- c(vec.true.lambda, true[1])
+    vec.true.mu     <- c(vec.true.mu, true[2])
+  })
+}
+
 
 # Prepare plot 
 name.list <- list("lambda", "mu")
@@ -182,22 +324,13 @@ pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
 
 
 # Save neural network predictions 
-save_predictions(nn_type, pred.list, true.list, n_trees, n_taxa,
+save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
                  lambda_range, epsilon_range, n_test, n_layer, 
-                 n_hidden, n_train)
+                 n_hidden, n_train)        
 
-dir.fig <- "figures/rnn-ltt/"
-fname.fig <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, epsilon_range,
-                                           n_test, dir.fig, "nn", n_layer = n_layer,
-                                           n_hidden = n_hidden, n_train = n_train)
-fname.fig <- paste(fname.fig, "-rnn-ltt", sep = "")
 
 # Plot Predictions 
 trees_test <- trees[test_indices] # test trees
-plot_together_nn_mle_predictions(pred.list, true.list, trees_test, n_trees, n_taxa, 
-                                 lambda_range, epsilon_range, nn_type = "RNN",
-                                 save = TRUE, fname = fname.fig)
-
-
-
-
+plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
+                                 lambda_range, epsilon_range, n_layer, n_hidden, n_train,
+                                 save = TRUE)
