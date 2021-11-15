@@ -1087,7 +1087,7 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
 }
 
 
-generate_ss_dataframe_from_trees <- function(trees, vec.lambda, vec.mu){
+generate_ss_dataframe_from_trees <- function(trees, true.param){
   
   ss.names <- create_ss.names() # summary statistic names 
   df <- create_ss_dataframe(ss.names) # initialize the data.frame (empty)
@@ -1105,8 +1105,11 @@ generate_ss_dataframe_from_trees <- function(trees, vec.lambda, vec.mu){
   
   cat("\nComputing tree summary statistics... Done.")
   
-  df$lambda <- vec.lambda # store lambda values in df 
-  df$mu <- vec.mu # store mu values in df 
+  names.param <- names(true.param) # names of the parameters (e.g. "lambda" "mu")
+  for (name in names.param){
+    param.vec  <- true.param[[name]]
+    df[name] <- param.vec # store parameter values in data.frame
+  }
   
   return(df)
 }

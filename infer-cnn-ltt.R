@@ -11,7 +11,7 @@ nn_type <- "cnn-ltt" # type of the model: Convolutional Neural Network w/ LTT
 
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)
-n_taxa  <- 100 # size of the trees
+n_taxa  <- c(100, 1000) # size of the trees
 lambda_range  <- c(0.1, 1.) # range of lambda values 
 epsilon_range <- c(0.0, 0.9) # range of epsilon values 
 ss_check <- TRUE
@@ -33,7 +33,7 @@ ds.ltt    <- convert_ltt_dataframe_to_dataset_cnn(df.ltt, df.rates)
 n_train    <- 9000
 n_valid    <- 500
 n_test     <- 500
-n_epochs   <- 100 
+n_epochs   <- 100
 batch_size <- 64
 patience   <- 10
 
@@ -93,7 +93,8 @@ cnn.net <- nn_module(
   }
 )
 
-cnn <- cnn.net(n_taxa, n_hidden, n_layer, ker_size) # create CNN
+n_input <- max(n_taxa)
+cnn <- cnn.net(n_input, n_hidden, n_layer, ker_size) # create CNN
 cnn$to(device = device) # Move it to the choosen GPU
 
 # Prepare training 
@@ -164,18 +165,12 @@ while (epoch < n_epochs & trigger < patience) {
 
 # Saving model for reproducibility 
 
-cat("\nSaving model...")
-dir.model <- paste("neural-networks-models", nn_type, "", sep = "/")
-fname.model <- paste("ntaxa", n_taxa,
-                     "lambda", lambda_range[1], lambda_range[2], 
-                     "espilon", epsilon_range[1], epsilon_range[2],
-                     "nlayer", n_layer, "nhidden", n_hidden,
-                     "kersize", ker_size,
-                     "ntrain", n_train, "nepochs", n_epochs, sep = "-")
-fname.model <- paste(dir.model, fname.model, sep = "")
-torch_save(cnn, fname.model)
-cat(paste("\n", fname.model, " saved.", sep = ""))
-cat("\nSaving model... Done.")
+#cat("\nSaving model...")
+#fname.model <- get_model_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range, 
+#                                   n_layer, n_hidden, n_train, ker_size)
+#torch_save(cnn, fname.model)
+#cat(paste("\n", fname.model, " saved.", sep = ""))
+#cat("\nSaving model... Done.")
 
 # Evaluation of the predictions of the RNN w/ test set 
 
@@ -202,20 +197,23 @@ true.list <- list("lambda" = vec.true.lambda, "mu" = vec.true.mu)
 pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
 
 # Save neural network predictions 
-save_predictions(nn_type, pred.list, true.list, n_trees, n_taxa,
-                 lambda_range, epsilon_range, n_test, n_layer, 
-                 n_hidden, n_train)                                              
+#save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
+#                 lambda_range, epsilon_range, n_test, n_layer, 
+#                 n_hidden, n_train, ker_size)                                              
 
-dir.fig <- "figures/cnn-ltt/"
-fname.fig <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range, epsilon_range,
-                                           n_test, dir.fig, "nn", n_layer = n_layer,
-                                           n_hidden = n_hidden, n_train = n_train, 
-                                           ker_size = ker_size)
-
-fname.fig <- paste(fname.fig, "-cnn-ltt", sep = "")
 
 # Plot Predictions 
 trees_test <- trees[test_indices] # test trees
-plot_together_nn_mle_predictions(pred.list, true.list, trees_test, n_trees, n_taxa, 
-                                 lambda_range, epsilon_range, nn_type = "CNN",
-                                 save = TRUE, fname = fname.fig)
+plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
+                                 lambda_range, epsilon_range, n_layer, n_hidden, n_train,
+                                 ker_size = ker_size, save = TRUE)
+
+
+pred.list.mle <- get_mle_preds(trees_test)
+pred.list.all <- list()
+pred.list.all[[nn_type]] <- pred.list
+pred.list.all[["mle"]]   <- pred.list.mle
+
+plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
+                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)
+

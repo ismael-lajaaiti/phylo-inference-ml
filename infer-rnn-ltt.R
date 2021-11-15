@@ -155,6 +155,17 @@ reformat_test_batch <- function(test.batch){
 }
 
 
+recover_trees_indices <- function(test_indices, list.indices){
+  indices <- c()
+  for (i in test_indices){
+    mapping <- names(list.batch)
+    ind <- list.indices[[mapping[i]]]
+    indices <- c(indices, ind)
+  }
+  return(indices)
+}
+
+
 if (length(n_taxa) == 2){
   list.batch <- create_all_batch(df.ltt, df.rates, list.indices, n_taxa)
   n_batch <- length(list.batch)
@@ -162,9 +173,10 @@ if (length(n_taxa) == 2){
   n_valid_batch <- 50
   n_test_batch  <- 50
   train_indices     <- sample(1:n_batch, n_train_batch)
-  not_train_indices <- setdiff(1:n_batch, n_train_batch)
+  not_train_indices <- setdiff(1:n_batch, train_indices)
   valid_indices     <- sample(not_train_indices, n_valid_batch)
-  test_indices      <- setdiff(not_train_indides, valid_indices)
+  test_indices      <- setdiff(not_train_indices, valid_indices)
+  recover_test_indices <- recover_trees_indices(test_indices, list.indices)
   train.batch <- list()
   valid.batch <- list()
   test.batch  <- list()
@@ -290,6 +302,7 @@ vec.true.mu     <- c()
 
 if (length(n_taxa) == 2){
   random_iter <- sample(1:length(test.batch), 500)
+  test_indices <- recover_test_indices[random_iter]
   coro::loop(for (i in random_iter) {
     b <- test.batch[[i]]
     out <- rnn(b$x$unsqueeze(2)$unsqueeze(1)$to(device = device))
@@ -333,4 +346,13 @@ save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
 trees_test <- trees[test_indices] # test trees
 plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
                                  lambda_range, epsilon_range, n_layer, n_hidden, n_train,
-                                 save = TRUE)
+                                 save = FALSE)
+
+
+pred.list.mle <- get_mle_preds(trees_test)
+pred.list.all <- list()
+pred.list.all[[nn_type]] <- pred.list
+pred.list.all[["mle"]]   <- pred.list.mle
+
+plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = FALSE, n_trees, n_taxa, 
+                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train)

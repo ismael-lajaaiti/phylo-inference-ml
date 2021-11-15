@@ -11,14 +11,14 @@ nn_type <- "dnn-ss" # type of the model: Deep Neural Network w/ Summary Statisti
 
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)
-n_taxa  <- 100 # size of the trees
+n_taxa  <- c(100,1000) # size of the trees
 lambda_range  <- c(0.1, 1.) # range of lambda values 
 epsilon_range <- c(0.0, 0.9) # range of epsilon values 
 ss_check <- TRUE
 
 # Generate the trees and save 
 out   <- load_dataset_trees(n_trees, n_taxa, lambda_range, epsilon_range,
-                      ss_check = ss_check)
+                            ss_check = ss_check)
 trees           <- out$trees # contains the phylogenetic trees generated 
 vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
 vec.true.mu     <- out$mu # contains the corresponding extinction rates 
@@ -31,7 +31,7 @@ df <- load_dataset_summary_statistics(n_trees, n_taxa, lambda_range,
 n_train    <- 9000
 n_valid    <- 500
 n_test     <- 500
-batch_size <- 64
+batch_size <- 32
 
 # Creation of the train, valid and test dataset
 ds <- convert_ss_dataframe_to_dataset(df)
@@ -50,9 +50,9 @@ test_dl  <- test_ds  %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 
 # DNN parameters 
 n_in      <- ncol(df) - 2 # number of neurons of the input layer 
-n_hidden  <- 20 # number of neurons in the hidden layers 
+n_hidden  <- 50 # number of neurons in the hidden layers 
 p_dropout <- 0.01 # dropout probability 
-n_epochs  <- 5 # maximum number of epochs for the training 
+n_epochs  <- 100 # maximum number of epochs for the training 
 patience  <- 10 # patience of the early stopping 
 
 # Build the DNN 
@@ -124,13 +124,6 @@ vec.true.mu     <- df$mu[test_indices] # corresponding mu true values
 name.list <- list("lambda", "mu")
 true.list <- list("lambda" = vec.true.lambda, "mu" = vec.true.mu)
 pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
-
-dir.fig <- "figures/dnn-ss/"
-fname.fig <- create_predictions_plot_fname(n_trees, n_taxa, lambda_range,
-                                           epsilon_range, n_test,
-                                           dir.fig, "nn", n_layer = n_layer,
-                                           n_hidden = n_hidden, n_train = n_train)
-fname.fig <- paste(fname.fig, "-dnn-ss", sep = "")
 
 # Save neural network predictions 
 save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,

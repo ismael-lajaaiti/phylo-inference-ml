@@ -163,11 +163,18 @@ get_lambda_mu_list <- function(list.r_epsilon){
 #' @examples
 plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname = NA,
                               r2_score = TRUE, mse_score = TRUE, 
-                              lm_fit = TRUE, subtitles = "", alone = TRUE){
+                              lm_fit = TRUE, subtitles = "", alone = TRUE, 
+                              bar = FALSE){
   
   n <- length(pred.list)
   n_row <- n %/% 2
-  n_col <- 2
+  n_col <- 2 + as.integer(bar)
+  
+  if (bar){
+    name <- paste(subtitles[[1]], names[[1]], sep = ".")
+    df.error.decomp <- data.frame(c(NA, NA))
+    colnames(df.error.decomp) <- name
+    }
   
   lambda.lim <- c(0.05, 1.05) 
   mu.lim <- c(0.,0.9)
@@ -175,7 +182,7 @@ plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname =
   
   if (save){
     fname <- paste(fname, "pdf", sep=".")
-    aspect_ratio <- 1.62 * (2 / n_row)
+    aspect_ratio <- 1.62 * (n_col / n_row)
     pdf(fname, width = 10, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
     }
   
@@ -212,7 +219,7 @@ plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname =
     
     # Linear fit of predictions vs. truth (to see significant trends)
     if (lm_fit){
-      fit = lm(pred ~ true)
+      fit <- lm(pred ~ true)
       fit.scale = lm(pred - true ~ scale(true, scale = FALSE))
       sig = summary(fit)$coefficients[2,4]
       sig.scale = summary(fit.scale)$coefficients[2,4]
@@ -227,12 +234,56 @@ plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname =
                              intercept, "^{", sig_intercept, sep = ""))
       abline(fit, col="red", lty = ifelse(sig < .05,1,2))
       mtext(text, line = -2, adj = 0)
-      #abline(fit.scale, col="blue", lty = ifelse(sig < .05,1,2))
-      
+    }
+    
+    if (bar){
+      a <- fit$coefficients[[1]]
+      b <- fit$coefficients[[2]]
+      true.lm <- a + b*pred
+      var  <- 1 - R2_Score(true.lm, true)
+      err  <- 1 - R2_Score(pred, true)
+      bias <- err - var
+      name <- paste(subtitles[1 + (i-1)%/%2], names[[1 + (i-1)%%2]], sep=".")
+      df.error.decomp[name] <- c(var, bias)
     }
   }
   
+  if (bar){
+    rownames(df.error.decomp) <- c("Variance", "Bias")
+    barplot(as.matrix(df.error.decomp), col = c("blue", "purple"), ylab = "Error")
+    legend("topright",                                   
+           legend = c("Variance", "Bias"),
+           fill = c("blue", "purple"))
+  }
+  
   if (save){dev.off()}
+}
+
+
+get_theil_coefficients <- function(pred, true){
+  
+  n <- length(pred)
+  fit <- lm(pred ~ true)
+  b1 <- coef(fit)[[2]]
+  a <- coef(fit)[[1]]
+  pred.lm <- a + b1*true
+  
+  u_d     <- sum(true**2)
+  u_bias  <- n*mean((pred-true))**2
+  u_slope <- (b1-1)**2 * sum((true - mean(true))**2)
+  u_var   <- sum((pred - pred.lm)**2)
+  u_bias  <- u_bias / (n*u_d)
+  u_slope <- u_slope/ (n*u_d)
+  u_var   <- u_var  / (n*u_d)
+
+  # SSD_rec <- u_bias + u_slope + u_var
+  SSD <- sum((pred-true)**2)/ (n*u_d)
+  SSD_rec <- u_bias + u_slope + u_var
+  
+  theil_coef <- list("SSD" = SSD, "SSD_rec" = SSD_rec, "bias" = u_bias, "slope" = u_slope, "var" = u_var)
+  
+  return(theil_coef)
+  
 }
 
 
@@ -253,6 +304,107 @@ get_significant_code <- function(p_value){
   else if (p_value < 0.01){s_code <- "**"}
   else if (p_value < 0.05){s_code <- "*"}
   return(s_code)
+  
+}
+
+
+get_mle_predictions <- function(type, trees){
+  
+  if      (type == "crbd") {
+    n_param    <- 2
+    name.param <- c("lambda", "mu")
+    }
+  else if (type == "expbd"){
+    n_param    <- 4
+    name.param <- c("a", "b", "c", "mu")
+    }
+  pred.param <- vector(mode='list', length=n_param)
+  names(pred.param) <- name.param
+
+  n_trees <- length(trees)
+  
+  for (i in 1:n_trees){
+    
+    tree <- trees[[i]] # get the tree 
+
+    if (type == "crbd"){
+      fit.ape <- ape::birthdeath(tree) # fit bd model 
+      pred.r  <- fit.ape$para[[2]] # get r prediction 
+      pred.epsilon <- fit.ape$para[[1]] # get epsilon prediction
+      # compute lambda and mu from r and epsilon 
+      pred <- get_lambda_mu_single(c(pred.r, pred.epsilon))
+    }
+    
+    else if (type == "expbd"){
+      f.lambda <- function(t, y) y[1]*exp(-y[2]*t) + y[3]
+      f.mu     <- function(t,y)  y[1]
+      height <- max(node.age(tree)$ages)
+      lambda.init <- c(0.3, 0.3, 0.3)
+      mu.init     <- c(0.4)
+      result <- fit_bd(tree, height, f.lambda, f.mu, lambda.init, mu.init, f=1,
+                       cst.mu = TRUE, expo.lamb = TRUE)
+      pred <- abs(c(result$lamb_par, result$mu_par))
+    }
+    
+    for (j in 1:n_param){
+      param           <- pred[j]
+      pred.param[[j]] <- c(pred.param[[j]], param)
+    } 
+    
+    progress(i, n_trees, progress.bar = TRUE, init = (i==1)) # print progression
+  }
+  return(pred.param)
+}
+
+
+plot_bars_mle_vs_nn <- function(pred.list, true.list, nn_type, name.list, save = FALSE,
+                                n_trees = NA, n_taxa = NA, lambda_range = NA, epsilon_range = NA,
+                                n_test = NA, n_layer = NA, n_hidden = NA, n_train = NA, ker_size = NA){
+  
+  n <- length(pred.list[["mle"]])
+  print(n)
+  par(mfrow=c(1,1))
+  
+  if (save){
+    fname <- get_plot_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+                                n_test, n_layer, n_hidden, n_train, ker_size)
+    fname <- substring(fname, 1, nchar(fname) - 4)
+    fname <- paste(fname, "-bar", ".pdf", sep = "")
+    aspect_ratio <- 1.62
+    pdf(fname, width = 10, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
+  }
+  
+  
+  df.error.decomp <- data.frame(matrix(ncol = n*2, nrow = 3))
+  col_names <- c()
+  for (name in name.list){
+    for (type in c(nn_type, "mle")){
+      col_names <- c(col_names, paste(name, type, sep="."))
+    }
+  }
+  colnames(df.error.decomp) <- col_names
+  
+
+  for (type in c(nn_type, "mle")){
+    preds <- pred.list[[type]]
+    for (i in 1:n){
+      col  <- paste(name.list[[i]], type, sep=".") 
+      pred <- preds[[i]]
+      true <- true.list[[i]]
+      theil.coef <- get_theil_coefficients(pred, true)
+      err.dec <- c(theil.coef$bias, theil.coef$slope, theil.coef$var)
+      df.error.decomp[col] <- err.dec
+    }
+  }
+  
+  rownames(df.error.decomp) <- c("Bias", "Slope", "Variance")
+  barplot(as.matrix(df.error.decomp), col = c("purple", "blue","darkgreen"), ylab = "Error")
+  legend("topleft",                                   
+         legend = c("Bias", "Slope", "Variance"),
+         fill = c("purple", "blue","darkgreen"))
+  
+  
+  if (save){dev.off()}
   
 }
 
@@ -284,10 +436,10 @@ get_significant_code <- function(p_value){
 #' @examples
 plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu, 
                                  lambda_range, epsilon_range, type = "all", 
-                                 save = FALSE, alone = TRUE){
+                                 save = FALSE, alone = TRUE, bar = TRUE){
   
   n_trees <- length(trees)
-  n_taxa  <- length(trees[[1]]$tip.label)
+  #n_taxa  <- length(trees[[1]]$tip.label)
   
   vec.pred.rpanda.lambda      <- c()
   vec.pred.rpanda.mu          <- c()
@@ -302,6 +454,7 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   for (i in 1:n_trees){
     
     tree <- trees[[i]] # get the phylogenetic tree 
+    n_taxa  <- length(tree$tip.label)
     
     # Prepare the fit 
     height <- max(node.age(tree)$ages) # height of the tree 
@@ -387,7 +540,7 @@ plot_mle_predictions <- function(trees, vec.true.lambda, vec.true.mu,
   }
   
   plot_pred_vs_true(pred.list, true.list, names, save = save, fname = fname, 
-                    subtitle = subtitles, alone = alone)
+                    subtitle = subtitles, alone = alone, bar = bar)
   
 }
 
@@ -417,26 +570,30 @@ plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees, nn_
                                              n_trees, n_taxa, lambda_range, epsilon_range,
                                              n_layer, n_hidden, n_train, ker_size = NA,
                                              mle_package = "ape", 
-                                             save = FALSE){
+                                             save = FALSE, bar = FALSE){
+  
+  
+  n_row <- 2
+  n_col <- 2 + as.integer(bar)
   
   if (save){
     n_test <- length(trees)
     fname <- get_plot_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
                                 n_test, n_layer, n_hidden, n_train, ker_size)
-    aspect_ratio <- 1.62
+    aspect_ratio <- 1.62 * n_col/n_row
     pdf(fname, width = 10, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
   }
   
   name.list <- list("lambda", "mu")
   
-  par(mfrow=c(2,2))
+  par(mfrow=c(n_row,n_col))
   plot_pred_vs_true(pred.nn.list, true.list, name.list,
                     subtitles = c(nn_type, nn_type), save = FALSE,
-                    alone = FALSE)
+                    alone = FALSE, bar = bar)
   vec.true.lambda <- true.list[[1]]
   vec.true.mu     <- true.list[[2]]
   plot_mle_predictions(trees, vec.true.lambda, vec.true.mu, 
-                       lambda_range, epsilon_range, 
+                       lambda_range, epsilon_range, bar = bar,
                        type = mle_package, save = FALSE, alone = FALSE)
   
   if (save){dev.off()}
@@ -473,67 +630,79 @@ plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees, nn_
 #' 
 #' @export
 #' @examples
-generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
-                           ss_check = TRUE){
+generate_trees <- function(type, n_trees, n_taxa, param.range, ss_check = TRUE){
   
-  trees <- list() # initialize tree list where trees will be stored 
-  vec.true.lambda <- c() # vector where true lambda values will be stored
-  vec.true.mu     <- c() # vector where true mu values will be stored 
-  
-  print(n_taxa)
-  print(length(n_taxa))
+  # Initialization
+  trees      <- list() # where trees will be stored 
+  name.param <- names(param.range) # parameters names 
+  n_param    <- length(name.param) # number of parameters 
+  true.param <- vector(mode='list', length=n_param)
+  names(true.param) <- c(name.param[1:n_param-1], "mu") # replace "epsilon" w/ "mu"
 
   cat("Generation of trees...\n")
   
   while (length(trees) < n_trees){
-    # Generate the phylogenetic tree 
-    true.lambda  <- runif(1, lambda_range[1] , lambda_range[2]) # generate random lambda
-    epsilon      <- runif(1, epsilon_range[1], epsilon_range[2]) # generate random epsilon
-    true.mu      <- epsilon * true.lambda # compute corresponding mu
-    if (length(n_taxa) == 1){
-      tree <- trees(c(true.lambda, true.mu), "bd", max.taxa=n_taxa)[[1]] # create the tree 
-    }
-    else if (length(n_taxa) == 2) {
-      true.n_taxa <- sample(n_taxa[1]:n_taxa[2], 1)
-      tree <- trees(c(true.lambda, true.mu), "bd",
-                    max.taxa=true.n_taxa)[[1]] # create the tree
-    }
-    else (cat("Error n_taxa should either be an integer, or a vector of size 2"))
     
+    # Generate the phylogenetic tree parameters 
+    vec.param <- c()
+    for (i in 1:n_param){
+      range <- param.range[[i]]
+      param <- runif(1, range[1], range[2])
+      vec.param <- c(vec.param, param)
+    }
     
-    # If checking that summary statistics have no NA
+    # Draw the number of tips of the tree
+    n_taxa.i <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
+    
+    # Generate tree - Constant rate birth death model 
+    if (type == "crbd"){
+      if (n_param != 2){cat("Wrong number of parameters. Expected 2 parameters for CRBD. \n")}
+      vec.param[2] <- vec.param[1]*vec.param[2] # mu = lambda*epsilon 
+      tree <- trees(c(vec.param[1], vec.param[2]), "bd", max.taxa=n_taxa.i)[[1]] 
+    }
+    
+    # Generate tree - Birth death model w/ exp. decay of lambda and constant mu 
+    else if (type == "expbd"){
+      if (n_param != 4){cat("Wrong number of parameters. Expected 4 parameters for exp. BD. \n")}
+      lambda <- function(t) vec.param[1]*exp(-vec.param[2]*t) + vec.param[3]
+      vec.param[4] <- vec.param[3]*vec.param[4] # mu = lambda*epsilon
+      tree <- rphylo(birth = lambda, death = vec.param[4], n = n_taxa.i, fossils = FALSE) 
+    }
+    
+    # Checking that summary statistics have no NA
     if (ss_check){
       ss <- get_ss(tree) # compute summary statistics 
-      if (!any(is.na(ss))){ # if no NA values 
-        trees <- append(trees, list(tree)) # append the new tree to the list
-        vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
-        vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
+      if (!any(is.na(ss))){
+        trees <- append(trees, list(tree)) # saving tree
+        for (i in 1:n_param){
+          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
+        }
         progress(length(trees), n_trees, progress.bar = TRUE,
                  init = (length(trees)==1)) # print progression
-        }
+      }
     }
     
-    # Else just append the new tree to the list and save rtes 
+    # Directly append the new tree to the list and save  
     else{
       trees <- append(trees, list(tree))
-      vec.true.lambda  <- c(vec.true.lambda, true.lambda) # store lambda prediction
-      vec.true.mu      <- c(vec.true.mu, true.mu) # store mu prediction 
+      for (i in n_param){
+        true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
+      }
       progress(length(trees), n_trees, progress.bar = TRUE,
                init = (length(trees)==1)) # print progression
-      }
-    
+    }
   }
   
   cat("\nGeneration of trees... Done.")
   
   # Prepare output containing: trees list, true lambda vector, true mu vector.
-  out <- list("trees"  = trees, 
-              "lambda" = vec.true.lambda,
-              "mu"     = vec.true.mu)
+  out <- list("trees"    = trees, 
+              "param"    = true.param)
   
   return(out)
   
 }
+
 
 
 #' Generate a data.frame containing Lineage Through Time of phylo trees
@@ -557,7 +726,11 @@ generate_trees <- function(n_trees, n_taxa, lambda_range, epsilon_range,
 generate_ltt_dataframe <- function(trees, n_taxa, vec.lambda, vec.mu){
   
   n_trees  <- length(trees) # number of trees 
-  df.ltt   <- data.frame("tree1" = rep(NA,n_taxa)) # initialize df.ltt
+  
+  if (length(n_taxa)==1){df.ltt <- data.frame("tree1" = rep(NA, n_taxa))}
+  
+  else {df.ltt <- data.frame("tree1" = rep(NA, n_taxa[2]))}
+  
   df.rates <- data.frame("lambda" = rep(NA, n_trees), # initialize df.rates
                          "mu" = rep(NA, n_trees)) 
   df.rates$lambda <- vec.lambda # fill lambda column w/ corresponding values
@@ -569,7 +742,9 @@ generate_ltt_dataframe <- function(trees, n_taxa, vec.lambda, vec.mu){
     tree <- trees[[i]] # get tree 
     ltt.coord <- ape::ltt.plot.coords(tree) # get ltt coordinates 
     ltt.coord <- as.data.frame(ltt.coord)
-    df.ltt[paste("tree", i, sep = "")] <- ltt.coord$time
+    ltt.coord.time <- ltt.coord$time
+    n <- length(ltt.coord.time)
+    df.ltt[1:n,paste("tree", i, sep = "")] <- ltt.coord$time
     progress(i, n_trees, progress.bar = TRUE, init = (i==1))
   }
   
@@ -603,9 +778,12 @@ convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates){
     name <- "ltt_dataset", 
     initialize = function(df.ltt, df.rates){
       
+      # input data
+      df.ltt[is.na(df.ltt)] <- 0
+      
       array.ltt <- df.ltt %>% 
         as.matrix() %>% 
-        array(dim = c(nrow(df.ltt), ncol(df.ltt), 1)) # convert df to array of good dimension
+        torch_tensor()
       
       # input data 
       x <- array.ltt
@@ -613,14 +791,15 @@ convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates){
       
       # target data 
       target.names <- c("lambda", "mu")
-      y = df.rates[target.names] %>% 
+      y <- df.rates[target.names] %>% 
         as.matrix()
       self$y <- torch_tensor(y)
       
     }, 
     
     .getitem = function(i) {
-      list(x = self$x[,i ,], y = self$y[i, ])
+      x <- self$x[,i]
+      list(x = x, y = self$y[i, ])
     }, 
     
     .length = function() {
@@ -638,14 +817,16 @@ convert_ltt_dataframe_to_dataset_cnn <- function(df.ltt, df.rates){
   ds.ltt <- torch::dataset(
     name <- "ltt_dataset", 
     initialize = function(df.ltt, df.rates){
+    
       
-      array.ltt <- df.ltt %>% 
-        as.matrix() %>% 
-        torch_tensor() # convert df to array of good dimension
+      # input data
+      df.ltt[is.na(df.ltt)] <- 0
       
-      # input data 
-      x <- array.ltt
+      x <- df.ltt %>%
+        as.matrix() %>%
+        torch_tensor()
       self$x <- x
+      
       
       # target data 
       target.names <- c("lambda", "mu")
@@ -656,7 +837,7 @@ convert_ltt_dataframe_to_dataset_cnn <- function(df.ltt, df.rates){
     }, 
     
     .getitem = function(i) {
-      list(x = self$x[ , i]$unsqueeze(1), y = self$y[i, ])
+      list(x = self$x[, i]$unsqueeze(1), y = self$y[i, ])
     }, 
     
     .length = function() {
@@ -667,25 +848,60 @@ convert_ltt_dataframe_to_dataset_cnn <- function(df.ltt, df.rates){
   return(ds.ltt)
 }
 
-get_backbone_save_name <- function(n_trees, n_taxa, lambda_range, epsilon_range){
+
+convert_ltt_dataframe_to_dataset_sizes <- function(df.ltt, df.rates){
   
+  ds.ltt <- torch::dataset(
+    name <- "ltt_dataset", 
+    initialize = function(df.ltt, df.rates){
+      
+      # input data
+      # df.ltt[is.na(df.ltt)] <- 0
+      
+      #array.ltt <- df.ltt %>% 
+      #  as.matrix() %>% 
+      #  torch_tensor()
+      
+      # input data 
+      x <- df.ltt
+      self$x <- x
+      
+      # target data 
+      target.names <- c("lambda", "mu")
+      y <- df.rates[target.names] %>% 
+        as.matrix()
+      self$y <- torch_tensor(y)
+      
+    }, 
+    
+    .getitem = function(i) {
+      x <- df.ltt[i] %>% na.omit() %>% as.matrix() %>% torch_tensor()
+      #x <- as.numeric(na.omit(self$x[,i]))
+      list(x = x, y = self$y[i, ])
+    }, 
+    
+    .length = function() {
+      self$y$size()[[1]]
+    }
+  )
   
-  if (length(n_taxa) == 1){
-    fname <- paste("ntrees", n_trees, "ntaxa", n_taxa,
-                   "lambda" , lambda_range[1] , lambda_range[2], 
-                   "epsilon", epsilon_range[1], epsilon_range[2], sep="-")
+  return(ds.ltt)
+}
+
+
+get_backbone_save_name <- function(n_trees, n_taxa, param.range){
+  
+  n_taxa_text <- ifelse(length(n_taxa) == 2, paste(n_taxa[1], n_taxa[2], sep="-"), 
+                        as.character(n_taxa))
+  
+  fname <- paste("ntrees", n_trees, "ntaxa", n_taxa_text, sep="-")
+  
+  for (i in 1:length(param.range)){
+    fname <- paste(fname, names(param.range)[i], param.range[[i]][1],
+                   param.range[[i]][2], sep = "-")
   }
-  
-  else if (length(n_taxa) == 2){
-    fname <- paste("ntrees", n_trees, "ntaxa", n_taxa[1], n_taxa[2],
-                   "lambda" , lambda_range[1] , lambda_range[2], 
-                   "epsilon", epsilon_range[1], epsilon_range[2], sep="-")
-  }
-  
-  else {cat("Error length(n_taxa) should be either equal to 1 or 2. ")}
   
   return(fname)
-  
 }
 
 
@@ -702,22 +918,19 @@ get_model_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_
 }
 
 
-get_dataset_save_name <- function(n_trees, n_taxa, lambda_range, epsilon_range,
-                                  ss_check){
+get_dataset_save_name <- function(n_trees, n_taxa, param.range, ss_check){
   
   dir <- "trees-dataset/"
   
-  fname <- get_backbone_save_name(n_trees, n_taxa, lambda_range, epsilon_range)
+  fname <- get_backbone_save_name(n_trees, n_taxa, param.range)
   fname <- paste(fname, "sscheck", ss_check, sep = "-")
   
   fname.trees  <- paste(dir, fname, "-trees.rds", sep="")
-  fname.lambda <- paste(dir, fname, "-lambda.rds", sep="")
-  fname.mu     <- paste(dir, fname, "-mu.rds", sep="")
+  fname.param  <- paste(dir, fname, "-param.rds", sep="")
   fname.ss     <- paste(dir, fname, "-ss.rds", sep="")
   
   fnames <- list("trees"  = fname.trees, 
-                 "lambda" = fname.lambda, 
-                 "mu"     = fname.mu,
+                 "param"  = fname.param, 
                  "ss"     = fname.ss)
   
   return(fnames)
@@ -743,24 +956,20 @@ get_dataset_save_name <- function(n_trees, n_taxa, lambda_range, epsilon_range,
 #' 
 #' @export
 #' @examples
-save_dataset_trees <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
-                         lambda_range, epsilon_range, ss_check){
+save_dataset_trees <- function(trees, true.param, n_trees, n_taxa,
+                               param.range, ss_check){
   
   # Getting file names to save 
-  fnames <- get_dataset_save_names(n_trees, n_taxa, lambda_range, epsilon_range,
-                                   ss_check)
+  fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)
   fname.trees  <- fnames$trees
-  fname.lambda <- fnames$lambda
-  fname.mu     <- fnames$mu
-  
+  fname.param  <- fnames$param
+
   # Saving data 
   cat("Saving data...\n")
   saveRDS(trees, fname.trees)
   cat(paste(fname.trees, " saved.\n", sep=""))
-  saveRDS(vec.lambda, fname.lambda)
-  cat(paste(fname.lambda, " saved.\n", sep=""))
-  saveRDS(vec.mu, fname.mu)
-  cat(paste(fname.mu, " saved.\n", sep=""))
+  saveRDS(true.param, fname.param)
+  cat(paste(fname.param, " saved.\n", sep=""))
   cat("Saving data... Done.\n")
   
 }
@@ -785,26 +994,22 @@ save_dataset_trees <- function(trees, vec.lambda, vec.mu, n_trees, n_taxa,
 #' 
 #' @export
 #' @examples
-load_dataset_trees <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check){
+load_dataset_trees <- function(n_trees, n_taxa, param.range, ss_check){
   
   # Getting file names to load 
-  fnames <- get_dataset_save_name(n_trees, n_taxa, lambda_range, mu_range,
-                                   ss_check)
+  fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)
   fname.trees  <- fnames$trees
-  fname.lambda <- fnames$lambda
-  fname.mu     <- fnames$mu
-  
+  fname.param  <- fnames$param
+
   # Loading data 
   cat("Loading data...\n")
   trees <- readRDS(fname.trees)
   cat(paste(fname.trees, " loaded.\n", sep=""))
-  vec.lambda <- readRDS(fname.lambda)
-  cat(paste(fname.lambda, " loaded.\n", sep=""))
-  vec.mu <- readRDS(fname.mu)
-  cat(paste(fname.mu, " loaded.\n", sep=""))
+  param <- readRDS(fname.param)
+  cat(paste(fname.param, " loaded.\n", sep=""))
   cat("Loading data... Done.\n")
   
-  out <- list("trees" = trees, "lambda" = vec.lambda, "mu" = vec.mu)
+  out <- list("trees" = trees, "param" = param)
   
   return(out)
   
@@ -825,11 +1030,9 @@ load_dataset_trees <- function(n_trees, n_taxa, lambda_range, mu_range, ss_check
 #' 
 #' @export
 #' @examples
-save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa,
-                                            lambda_range, epsilon_range){
+save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa, param.range){
   
-  fnames <- get_dataset_save_name(n_trees, n_taxa, lambda_range, epsilon_range,
-                                  ss_check = TRUE)
+  fnames   <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check = TRUE)
   fname.ss <- fnames$ss
   
   cat("Saving summary statistics data...\n")
@@ -854,11 +1057,9 @@ save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa,
 #' 
 #' @export
 #' @examples
-load_dataset_summary_statistics <- function(n_trees, n_taxa,
-                                            lambda_range, epsilon_range){
+load_dataset_summary_statistics <- function(n_trees, n_taxa, param.range){
   
-  fnames <- get_dataset_save_name(n_trees, n_taxa, lambda_range, epsilon_range,
-                                  ss_check = TRUE)
+  fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check = TRUE)
   fname.ss <- fnames$ss
   
   cat("Loading summary statistics data...\n")
@@ -937,6 +1138,12 @@ get_plot_save_name <- function(model_type, n_trees, n_taxa, lambda_range, epsilo
   
 }
 
+get_mle_preds_save_name <- function(n_trees, n_taxa, param.range, ss_check){
+  fname <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)$ss
+  fname <- substring(fname, 1, nchar(fname) - 6)
+  fname <- paste(fname, "mle.rds", sep = "")
+  return(fname)
+}
 
 get_preds_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
                                  n_test, n_layer, n_hidden, n_train, ker_size = NA){
