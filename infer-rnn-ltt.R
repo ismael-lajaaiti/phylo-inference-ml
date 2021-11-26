@@ -11,31 +11,35 @@ device <- "cuda:2" # GPU where to run computations
 nn_type <- "rnn-ltt" # type of the model: Recurrent Neural Network w/ LTT
 
 # Parameters of phylogenetic trees
-n_trees <- 10000 # total number of trees (train + valid + test)
+n_trees <- 1000 # total number of trees (train + valid + test)
 n_taxa  <- c(100,1000) # size of the trees
-lambda_range  <- c(0.1, 1.) # range of lambda values 
-epsilon_range <- c(0.0, 0.9) # range of epsilon values 
+a_range <- c(.1, .5)
+b_range <- c(.1, .5)
+c_range <- c(.1, .5)
+epsilon_range <- c(0, .9)
+param.range <- list("a"       = a_range,
+                    "b"       = b_range,
+                    "c"       = c_range,
+                    "epsilon" = epsilon_range)
 ss_check <- TRUE
 
 # Generate the trees and save 
-out   <- load_dataset_trees(n_trees, n_taxa, lambda_range, epsilon_range,
-                      ss_check = ss_check)
-trees           <- out$trees # contains the phylogenetic trees generated 
-vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
-vec.true.mu     <- out$mu # contains the corresponding extinction rates 
+out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check)
+trees      <- out$trees # contains the phylogenetic trees generated
+true.param <- out$param # contains the true values of the parameters 
 
 # Create the corresponding summary statistics data.frame
-out       <- generate_ltt_dataframe(trees, n_taxa, vec.true.lambda, vec.true.mu)
+out       <- generate_ltt_dataframe(trees, n_taxa, true.param)
 df.ltt    <- out$ltt   # ltt dataframe 
 df.rates  <- out$rates # rate dataframe
-ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, df.rates)
+ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, df.rates, nn_type)
 
 # Parameters of the NN's training
-n_train    <- 9000
-n_valid    <- 500
-n_test     <- 500
+n_train    <- 900
+n_valid    <- 50
+n_test     <- 50
 n_epochs   <- 100 
-batch_size <- 64
+batch_size <- 32
 patience   <- 10
 
 # Creation of the train, valid and test dataset
@@ -57,20 +61,21 @@ if (length(n_taxa) == 1){
 
 
 # Parameters of the RNN
-n_hidden  <- 500  # number of neurons in hidden layers 
+n_hidden  <- 800  # number of neurons in hidden layers 
 n_layer   <- 2   # number of stacked RNN layers 
 p_dropout <- .01 # dropout probability
+n_out     <- length(true.param)
 
 
 # Build the RNN 
 
 rnn.net <- nn_module(
-  initialize = function(n_input, n_hidden, n_layer, p_dropout = .01,
+  initialize = function(n_input, n_out, n_hidden, n_layer, p_dropout = .01,
                         batch_first = TRUE) {
     self$rnn <- nn_lstm(input_size = n_input, hidden_size = n_hidden, 
                         dropout = p_dropout, num_layers = n_layer,
                         batch_first = batch_first)
-    self$out <- nn_linear(n_hidden, 2)
+    self$out <- nn_linear(n_hidden, n_out)
   },
   
   forward = function(x) {
@@ -80,7 +85,7 @@ rnn.net <- nn_module(
   }
 )
 
-rnn <- rnn.net(1, n_hidden, n_layer, p_dropout) # create the RNN
+rnn <- rnn.net(1, n_out, n_hidden, n_layer, p_dropout) # create the RNN
 rnn$to(device = device) # move the RNN to the choosen GPU 
 
 
@@ -124,7 +129,7 @@ create_all_batch <- function(df.ltt, df.rates, list.indices, n_taxa){
   for (n in n_taxa[1]:n_taxa[2]){
     indices <- list.indices[[as.character(n)]]
     batch <- create_one_batch(df.ltt, df.rates, indices)
-    if (length(batch) != 0){
+    if (dim(batch$x)[1] != 0){
       list.batch[[as.character(n)]] <- batch
     }
   }
@@ -167,11 +172,12 @@ recover_trees_indices <- function(test_indices, list.indices){
 
 
 if (length(n_taxa) == 2){
+  list.indices <- find_indices_same_size(df.ltt, n_taxa)
   list.batch <- create_all_batch(df.ltt, df.rates, list.indices, n_taxa)
   n_batch <- length(list.batch)
-  n_train_batch <- 801
-  n_valid_batch <- 50
-  n_test_batch  <- 50
+  n_train_batch <- as.integer(n_batch*0.9)
+  n_valid_batch <- as.integer(n_batch*0.05)
+  n_test_batch  <- n_batch - n_train_batch - n_valid_batch
   train_indices     <- sample(1:n_batch, n_train_batch)
   not_train_indices <- setdiff(1:n_batch, train_indices)
   valid_indices     <- sample(not_train_indices, n_valid_batch)
@@ -293,31 +299,23 @@ cat("\nSaving model... Done.")
 # Evaluation of the predictions of the RNN w/ test set 
 
 rnn$eval()
-vec.pred.lambda <- c()
-vec.pred.mu     <- c()
-vec.true.lambda <- c()
-vec.true.mu     <- c()
+nn.pred <- vector(mode = "list", length = n_out)
+names(nn.pred) <- names(true.param)
 
 # Compute predictions 
 
 if (length(n_taxa) == 2){
-  random_iter <- sample(1:length(test.batch), 500)
+  random_iter <- sample(1:length(test.batch), 40)
   test_indices <- recover_test_indices[random_iter]
   coro::loop(for (i in random_iter) {
     b <- test.batch[[i]]
     out <- rnn(b$x$unsqueeze(2)$unsqueeze(1)$to(device = device))
-    pred.lambda <- as.numeric(out[,1]$to(device = "cpu")) # move the tensor to CPU 
-    pred.mu     <- as.numeric(out[,2]$to(device = "cpu")) # move the tensor to CPU 
-    true.lambda <- as.numeric(b$y[1])
-    true.mu     <- as.numeric(b$y[2])
-    vec.pred.lambda <- c(vec.pred.lambda, pred.lambda)
-    vec.pred.mu     <- c(vec.pred.mu, pred.mu)
-    vec.true.lambda <- c(vec.true.lambda, true.lambda)
-    vec.true.mu     <- c(vec.true.mu, true.mu)
+    out <- out$squeeze(1)$to(device = "cpu") %>% as.numeric()
+    for (i in 1:length(out)){nn.pred[[i]] <- c(nn.pred[[i]],out[i])}
   })
 }
 
-else {
+if (length(n_taxa) == 1) {
   coro::loop(for (b in test_dl) {
     out <- rnn(b$x$reshape(c(b$x$shape, 1L))$to(device = device))
     pred <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
@@ -331,15 +329,17 @@ else {
 
 
 # Prepare plot 
-name.list <- list("lambda", "mu")
-true.list <- list("lambda" = vec.true.lambda, "mu" = vec.true.mu)
-pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
+true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])
+fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
+mle.pred <- readRDS(fname.mle)
+mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
+pred.param.test <- list("mle" = mle.pred.test)
+pred.param.test[[nn_type]] <- nn.pred
+param.range.ajusted <- param.range[-4]
+param.range.ajusted[["mu"]] <- c(param.range[["c"]][1]*param.range[["epsilon"]][1],
+                                 param.range[["c"]][2]*param.range[["epsilon"]][2])
 
-
-# Save neural network predictions 
-save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
-                 lambda_range, epsilon_range, n_test, n_layer, 
-                 n_hidden, n_train)        
+plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted)
 
 
 # Plot Predictions 

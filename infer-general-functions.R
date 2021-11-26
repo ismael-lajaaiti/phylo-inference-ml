@@ -260,6 +260,60 @@ plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname =
 }
 
 
+plot_pred_vs_true_single <- function(pred, true, name, range, sub = '', 
+                                     lm = TRUE, print_mse = TRUE, 
+                                     print_r2 = FALSE){
+  
+  range.size <- range[2] - range[1]
+  marge <- 0.2 * range.size
+  xy.lim <- c(range[1] - marge, range[2] + marge)
+  mse <- ifelse(print_mse, round(RMSE(pred, true)/mean(true),3), NA)
+  r2  <- ifelse(print_r2, round(R2_Score(pred, true),3), NA)
+  main <- create_main_plot_pred_vs_true(name, print_r2, print_mse, r2, mse)
+  plot(true, pred, main = main, sub = sub, xlim = xy.lim, ylim = xy.lim, cex = .5, col = alpha("black", .5))
+  abline(0,1)
+  if (lm){
+    fit <- lm(pred ~ true)
+    sig = summary(fit)$coefficients[2,4]
+    abline(fit, col="red", lty = ifelse(sig < .05,1,2))
+  }
+}
+
+
+plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.range,
+                                  save = FALSE, fname = NA, lm = TRUE,
+                                  print_mse = TRUE, print_r2 = FALSE){
+  
+  
+  n_model <- length(pred.param)
+  name.model <- names(pred.param)
+  n_param <- length(pred.param[[1]])
+  
+  par(mfrow = c(n_model, n_param))
+
+  if (save){
+    fname <- paste(fname, "pdf", sep=".")
+    aspect_ratio <- 1.62 * (n_model / n_param)
+    pdf(fname, width = 10, height = 10/aspect_ratio,
+        pointsize = 15/sqrt(aspect_ratio))
+  }
+  
+  for (i in 1:n_model){
+    pred.model <- pred.param[[i]]
+    for (j in 1:n_param){
+      pred <- pred.model[[j]]
+      true <- true.param[[j]]
+      plot_pred_vs_true_single(pred, true, name.param[j], param.range[[j]], 
+                               sub = name.model[i], lm = lm, print_mse = print_mse,
+                               print_r2 = print_r2)  
+    }
+  }
+  
+  if (save){dev.off()}
+  
+}
+
+
 get_theil_coefficients <- function(pred, true){
   
   n <- length(pred)
@@ -289,22 +343,20 @@ get_theil_coefficients <- function(pred, true){
 
 create_main_plot_pred_vs_true <- function(rate_name, r2_score, mse_score,
                                           r2 = NA, mse = NA){
-  if (rate_name == "lambda"){main <- '$\\lambda$'}
-  else if (rate_name == "mu"){main <- '$\\mu$'}
+
+  main <- paste('$\\', rate_name, '$', sep = '')
   if (r2_score){main <- paste(main, '| $r^2 = $', r2)}
-  if (mse_score){main <- paste(main, '| $MSE = $', mse)}
+  if (mse_score){main <- paste(main, '| $NRMSE = $', mse)}
   return(TeX(main))
 }
 
 
 get_significant_code <- function(p_value){
-  
   s_code <- ""
   if (p_value < 0.001){s_code <- "***"}
   else if (p_value < 0.01){s_code <- "**"}
   else if (p_value < 0.05){s_code <- "*"}
   return(s_code)
-  
 }
 
 
@@ -313,11 +365,16 @@ get_mle_predictions <- function(type, trees){
   if      (type == "crbd") {
     n_param    <- 2
     name.param <- c("lambda", "mu")
-    }
+  }
   else if (type == "expbd"){
     n_param    <- 4
     name.param <- c("a", "b", "c", "mu")
-    }
+  }
+  else if (type == "bisse"){
+    n_param <- 6
+    name.param <- c("lambda0", "lambda1", "mu0", "mu1", "q01", "q10") 
+  }
+  
   pred.param <- vector(mode='list', length=n_param)
   names(pred.param) <- name.param
 
@@ -344,6 +401,16 @@ get_mle_predictions <- function(type, trees){
       result <- fit_bd(tree, height, f.lambda, f.mu, lambda.init, mu.init, f=1,
                        cst.mu = TRUE, expo.lamb = TRUE)
       pred <- abs(c(result$lamb_par, result$mu_par))
+    }
+    
+    else if (type == "bisse"){
+      lik <- make.bisse(tree, tree$tip.state)
+      lik <- constrain(lik, lambda0 ~ lambda1 - mu1 + mu0)
+      lik <- constrain(lik, q01 ~ q10)
+      p <- starting.point.bisse(tree)
+      fit <- find.mle(lik, p, method="subplex")
+      lambda0 <- fit$par[[1]] - fit$par[[3]] + fit$par[[2]]
+      pred <- c(lambda0, as.numeric(fit$par), fit$par[[4]])
     }
     
     for (j in 1:n_param){
@@ -705,6 +772,65 @@ generate_trees <- function(type, n_trees, n_taxa, param.range, ss_check = TRUE){
 
 
 
+generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
+  
+  trees <- list()
+  name.param <- c("lambda0", "lambda1", "mu0", "mu1", "q01", "q10") 
+  true.param <- vector(mode='list', length=6)
+  names(true.param) <- name.param
+  
+  while(length(trees) < n_trees){
+    lambda.range <- param.range[[1]]
+    lambda <- runif(2, lambda.range[1], lambda.range[2])
+    r <- runif(1, max(lambda)/10, min(lambda))
+    mu <- lambda - r
+    q.range <- param.range[[3]]
+    q  <- rep(runif(1, q.range[1], q.range[2]), 2)
+    vec.param <- c(lambda, mu, q)
+    n_taxa.i <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
+    
+    tree <- NULL
+    lik <- NULL
+    
+    while(is.null(tree) | is.null(lik)){
+      tree <- tree.bisse(vec.param, max.taxa = n_taxa.i, x0 = NA)
+      if (!(all(tree$tip.state == 0) | all(tree$tip.state == 1))){
+        lik <- make.bisse(tree, tree$tip.state)
+      }
+    }
+    
+    # Checking that summary statistics have no NA
+    if (ss_check){
+      ss <- get_ss(tree) # compute summary statistics 
+      if (!any(is.na(ss))){
+        trees <- append(trees, list(tree)) # saving tree
+        for (i in 1:6){
+          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
+        }
+        progress(length(trees), n_trees, progress.bar = TRUE,
+                 init = (length(trees)==1)) # print progression
+      }
+    }
+    
+    # Directly append the new tree to the list and save  
+    else{
+      trees <- append(trees, list(tree))
+      for (i in n_param){
+        true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
+      }
+      progress(length(trees), n_trees, progress.bar = TRUE,
+               init = (length(trees)==1)) # print progression
+    }
+  }
+  
+  out <- list("trees"    = trees, 
+              "param"    = true.param)
+  
+  return(out)
+}
+
+
+
 #' Generate a data.frame containing Lineage Through Time of phylo trees
 #'
 #' Given a list of phylo trees, returns their LTT in a data.frame
@@ -723,18 +849,13 @@ generate_trees <- function(type, n_trees, n_taxa, param.range, ss_check = TRUE){
 #' 
 #' @export
 #' @examples
-generate_ltt_dataframe <- function(trees, n_taxa, vec.lambda, vec.mu){
+generate_ltt_dataframe <- function(trees, n_taxa, true.param){
   
   n_trees  <- length(trees) # number of trees 
+  n_row <- ifelse(length(n_taxa) == 1, n_taxa, n_taxa[2])
+  df.ltt <- data.frame("tree1" = rep(NA, n_row))
   
-  if (length(n_taxa)==1){df.ltt <- data.frame("tree1" = rep(NA, n_taxa))}
-  
-  else {df.ltt <- data.frame("tree1" = rep(NA, n_taxa[2]))}
-  
-  df.rates <- data.frame("lambda" = rep(NA, n_trees), # initialize df.rates
-                         "mu" = rep(NA, n_trees)) 
-  df.rates$lambda <- vec.lambda # fill lambda column w/ corresponding values
-  df.rates$mu     <- vec.mu # fill mu column w/ corresponding values 
+  df.rates <- as.data.frame(do.call(cbind, true.param))
   
   cat("Creating LTT dataframe...\n")
   
@@ -772,78 +893,57 @@ generate_ltt_dataframe <- function(trees, n_taxa, vec.lambda, vec.mu){
 #' 
 #' @export
 #' @examples
-convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates){
+convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates, nn_type){
   
-  ds.ltt <- torch::dataset(
-    name <- "ltt_dataset", 
-    initialize = function(df.ltt, df.rates){
+  if (nn_type == "cnn-ltt"){
+    ds.ltt <- torch::dataset(
+      name <- "ltt_dataset", 
+      initialize = function(df.ltt, df.rates){
+        
+        # input
+        df.ltt[is.na(df.ltt)] <- 0
+        
+        array.ltt <- df.ltt %>% 
+          as.matrix() %>% 
+          torch_tensor()
+        self$x <- array.ltt
+        
+        # target 
+        y <- df.rates %>% 
+          as.matrix()
+        self$y <- torch_tensor(y)
+      }, 
       
-      # input data
-      df.ltt[is.na(df.ltt)] <- 0
+      .getitem = function(i) {list(x = self$x[,i]$unsqueeze(1), y = self$y[i, ])},
       
-      array.ltt <- df.ltt %>% 
-        as.matrix() %>% 
-        torch_tensor()
-      
-      # input data 
-      x <- array.ltt
-      self$x <- x
-      
-      # target data 
-      target.names <- c("lambda", "mu")
-      y <- df.rates[target.names] %>% 
-        as.matrix()
-      self$y <- torch_tensor(y)
-      
-    }, 
-    
-    .getitem = function(i) {
-      x <- self$x[,i]
-      list(x = x, y = self$y[i, ])
-    }, 
-    
-    .length = function() {
-      self$y$size()[[1]]
-    }
+      .length = function() {self$y$size()[[1]]}
   )
+  }
   
-  return(ds.ltt)
-}
-
-
-
-convert_ltt_dataframe_to_dataset_cnn <- function(df.ltt, df.rates){
-  
-  ds.ltt <- torch::dataset(
-    name <- "ltt_dataset", 
-    initialize = function(df.ltt, df.rates){
-    
+  else{
+    ds.ltt <- torch::dataset(
+      name <- "ltt_dataset", 
+      initialize = function(df.ltt, df.rates){
+        
+        # input
+        df.ltt[is.na(df.ltt)] <- 0
+        
+        array.ltt <- df.ltt %>% 
+          as.matrix() %>% 
+          torch_tensor()
+        self$x <- array.ltt
+        
+        # target 
+        y <- df.rates %>% 
+          as.matrix()
+        self$y <- torch_tensor(y)
+      }, 
       
-      # input data
-      df.ltt[is.na(df.ltt)] <- 0
+      .getitem = function(i) {list(x = self$x[,i], y = self$y[i, ])},
       
-      x <- df.ltt %>%
-        as.matrix() %>%
-        torch_tensor()
-      self$x <- x
-      
-      
-      # target data 
-      target.names <- c("lambda", "mu")
-      y = df.rates[target.names] %>% 
-        as.matrix()
-      self$y <- torch_tensor(y)
-      
-    }, 
-    
-    .getitem = function(i) {
-      list(x = self$x[, i]$unsqueeze(1), y = self$y[i, ])
-    }, 
-    
-    .length = function() {
-      self$y$size()[[1]]
-    }
-  )
+      .length = function() {self$y$size()[[1]]}
+    )
+  }
   
   return(ds.ltt)
 }

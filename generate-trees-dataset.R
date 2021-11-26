@@ -1,8 +1,8 @@
 source("infer-general-functions.R")
 
 
-type     <- "expbd"
-n_trees  <- 1000 # number of trees to generate
+type     <- "bisse"
+n_trees  <- 10000 # number of trees to generate
 n_taxa   <- c(100,1000) 
 ss_check <- TRUE # check that all summary statistics can be computed 
 mle      <- TRUE # should mle predictions be computed and saved 
@@ -33,9 +33,23 @@ if (type == "expbd"){
 }
 # -------------------------------
 
+# BiSSE
+# -------------------------------
+if (type == "bisse"){
+  param.range <- list("lambda" = c(0.1,1.), "epsilon" = c(0.,.9), "q" = c(0.01,0.1))
+}
+# -------------------------------
+
 
 # Generate trees 
-out <- generate_trees(type, n_trees, n_taxa, param.range, ss_check)
+if(type %in% c("crbd", "expbd")){
+  out <- generate_trees(type, n_trees, n_taxa, param.range, ss_check)
+}
+  
+if (type == "bisse"){
+  out <- generate_trees_bisse(n_trees, n_taxa, param.range, ss_check)
+}
+   
 
 # Compute and save tree summary statistics 
 if (ss_check){
@@ -51,3 +65,21 @@ if (mle){
   fname.mle  <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
   saveRDS(pred.param, fname.mle)
 }
+
+
+# n_trees
+# out <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check)
+# true.param <- out$param
+# fname.mle  <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
+# pred.param <- readRDS(fname.mle)
+# 
+# n_param <- length(true.param)
+# par(mfrow = c(1, n_param))
+# 
+# for (i in 1:n_param){
+#   plot(true.param[[i]], pred.param[[i]], ylim = c(0.,0.6))
+#   abline(0,1)
+# }
+
+
+

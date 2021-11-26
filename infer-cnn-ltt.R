@@ -5,36 +5,40 @@ source("infer-general-functions.R")
 source("neural-network-functions.R")
 
 
-device <- "cuda:2" # GPU where to run computations 
+device <- "cuda:1" # GPU where to run computations 
 
 nn_type <- "cnn-ltt" # type of the model: Convolutional Neural Network w/ LTT
 
 # Parameters of phylogenetic trees
-n_trees <- 10000 # total number of trees (train + valid + test)
+n_trees <- 1000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
-lambda_range  <- c(0.1, 1.) # range of lambda values 
-epsilon_range <- c(0.0, 0.9) # range of epsilon values 
+a_range <- c(.1, .5)
+b_range <- c(.1, .5)
+c_range <- c(.1, .5)
+epsilon_range <- c(0, .9)
+param.range <- list("a"       = a_range,
+                    "b"       = b_range,
+                    "c"       = c_range,
+                    "epsilon" = epsilon_range)
 ss_check <- TRUE
 
 # Generate the trees and save 
-out   <- load_dataset_trees(n_trees, n_taxa, lambda_range, epsilon_range,
-                            ss_check = ss_check)
-trees           <- out$trees # contains the phylogenetic trees generated 
-vec.true.lambda <- out$lambda # contains the corresponding speciation rates 
-vec.true.mu     <- out$mu # contains the corresponding extinction rates 
+out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check)
+trees      <- out$trees # contains the phylogenetic trees generated
+true.param <- out$param # contains the true values of the parameters 
 
 # Create the corresponding summary statistics data.frame
-out       <- generate_ltt_dataframe(trees, n_taxa, vec.true.lambda, vec.true.mu)
+out       <- generate_ltt_dataframe(trees, n_taxa, true.param)
 df.ltt    <- out$ltt   # ltt dataframe 
 df.rates  <- out$rates # rate dataframe
-ds.ltt    <- convert_ltt_dataframe_to_dataset_cnn(df.ltt, df.rates)
+ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, df.rates, nn_type)
 
 # Parameters of the NN's training
-n_train    <- 9000
-n_valid    <- 500
-n_test     <- 500
+n_train    <- 900
+n_valid    <- 50
+n_test     <- 50
 n_epochs   <- 100
-batch_size <- 64
+batch_size <- 32
 patience   <- 10
 
 # Creation of the train, valid and test dataset
@@ -52,9 +56,11 @@ valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
 
 
-n_hidden <- 10
+n_hidden <- 15
 n_layer  <- 3
 ker_size <- 5
+n_input <- max(n_taxa)
+n_out    <- length(param.range)
 
 # Build the CNN
 
@@ -62,13 +68,13 @@ cnn.net <- nn_module(
   
   "corr-cnn",
   
-  initialize = function(n_input, n_hidden, n_layer, ker_size) {
+  initialize = function(n_input, n_out, n_hidden, n_layer, ker_size) {
     self$conv1 <- nn_conv1d(in_channels = 1, out_channels = n_hidden, kernel_size = ker_size)
     self$conv2 <- nn_conv1d(in_channels = n_hidden, out_channels = 2*n_hidden, kernel_size = ker_size)
     self$conv3 <- nn_conv1d(in_channels = 2*n_hidden, out_channels = 2*2*n_hidden, kernel_size = ker_size)
     n_flatten <- compute_dim_ouput_flatten_cnn(n_input, n_layer, ker_size)
     self$fc1 <- nn_linear(in_features = n_flatten * (2*2*n_hidden), out_features = 100)
-    self$fc2 <- nn_linear(in_features = 100, out_features = 2)
+    self$fc2 <- nn_linear(in_features = 100, out_features = n_out)
   },
   
   forward = function(x) {
@@ -93,8 +99,7 @@ cnn.net <- nn_module(
   }
 )
 
-n_input <- max(n_taxa)
-cnn <- cnn.net(n_input, n_hidden, n_layer, ker_size) # create CNN
+cnn <- cnn.net(n_input, n_out, n_hidden, n_layer, ker_size) # create CNN
 cnn$to(device = device) # Move it to the choosen GPU
 
 # Prepare training 
@@ -175,26 +180,19 @@ while (epoch < n_epochs & trigger < patience) {
 # Evaluation of the predictions of the RNN w/ test set 
 
 cnn$eval()
-vec.pred.lambda <- c()
-vec.pred.mu     <- c()
-vec.true.lambda <- c()
-vec.true.mu     <- c()
+nn.pred <- vector(mode = "list", length = n_out)
+names(nn.pred) <- names(true.param)
 
 # Compute predictions 
 coro::loop(for (b in test_dl) {
   out <- cnn(b$x$to(device = device))
   pred <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
-  true <- as.numeric(b$y)
-  vec.pred.lambda <- c(vec.pred.lambda, pred[1])
-  vec.pred.mu     <- c(vec.pred.mu, pred[2])
-  vec.true.lambda <- c(vec.true.lambda, true[1])
-  vec.true.mu     <- c(vec.true.mu, true[2])
+  #true <- as.numeric(b$y)
+  for (i in 1:n_out){nn.pred[[i]] <- c(nn.pred[[i]], pred[i])}
 })
 
 # Prepare plot 
-name.list <- list("lambda", "mu")
-true.list <- list("lambda" = vec.true.lambda, "mu" = vec.true.mu)
-pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
+name.param <- c("alpha", "beta", "gamma", "mu")
 
 # Save neural network predictions 
 #save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
@@ -203,16 +201,17 @@ pred.list <- list("lambda" = vec.pred.lambda, "mu" = vec.pred.mu)
 
 
 # Plot Predictions 
-trees_test <- trees[test_indices] # test trees
-plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
-                                 lambda_range, epsilon_range, n_layer, n_hidden, n_train,
-                                 ker_size = ker_size, save = TRUE)
+true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])
+fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
+mle.pred <- readRDS(fname.mle)
+mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
+pred.param.test <- list("mle" = mle.pred.test)
+pred.param.test[[nn_type]] <- nn.pred
+param.range.ajusted <- param.range[-4]
+param.range.ajusted[["mu"]] <- c(param.range[["c"]][1]*param.range[["epsilon"]][1],
+                                 param.range[["c"]][2]*param.range[["epsilon"]][2])
 
-
-pred.list.mle <- get_mle_preds(trees_test)
-pred.list.all <- list()
-pred.list.all[[nn_type]] <- pred.list
-pred.list.all[["mle"]]   <- pred.list.mle
+plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted)
 
 plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
                     lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)
