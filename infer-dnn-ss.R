@@ -10,15 +10,11 @@ source("neural-network-functions.R")
 nn_type <- "dnn-ss" # type of the model: Deep Neural Network w/ Summary Statistics
 
 # Parameters of phylogenetic trees
-n_trees <- 1000 # total number of trees (train + valid + test)
+n_trees <- 10000 # total number of trees (train + valid + test)
 n_taxa  <- c(100,1000) # size of the trees
-a_range <- c(.1, .5)
-b_range <- c(.1, .5)
-c_range <- c(.1, .5)
-epsilon_range <- c(0, .9)
-param.range <- list("a"       = a_range,
-                    "b"       = b_range,
-                    "c"       = c_range,
+lambda_range <- c(.1, 1.)
+epsilon_range <- c(0, 0.9)
+param.range <- list("lambda"  = lambda_range,
                     "epsilon" = epsilon_range)
 
 #param.range <- list("lambda" = c(0.1,1.), "epsilon" = c(0.,.9))
@@ -38,10 +34,10 @@ df <- load_dataset_summary_statistics(n_trees, n_taxa, param.range)
 df <- scale_summary_statistics(df, n_taxa, name.param)
 
 # Parameters of the NN's training
-n_train    <- 900
-n_valid    <- 50
-n_test     <- 50
-batch_size <- 32
+n_train    <- 9000
+n_valid    <- 500
+n_test     <- 500
+batch_size <- 64
 
 # Creation of the train, valid and test dataset
 ds <- convert_ss_dataframe_to_dataset(df)
@@ -142,7 +138,7 @@ if (save_preds){
 mle.pred.test <- get_mle_predictions("crbd", trees[test_indices])
 
 # Prepare plot 
-name.param.plot <- c("alpha", "beta", "gamma", "mu")
+name.param.plot <- c("lambda", "mu")
 
 # Plot Predictions 
 true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])

@@ -10,16 +10,10 @@ device <- "cuda:1" # GPU where to run computations
 nn_type <- "cnn-ltt" # type of the model: Convolutional Neural Network w/ LTT
 
 # Parameters of phylogenetic trees
-n_trees <- 1000 # total number of trees (train + valid + test)
+n_trees <- 10000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
-a_range <- c(.1, .5)
-b_range <- c(.1, .5)
-c_range <- c(.1, .5)
-epsilon_range <- c(0, .9)
-param.range <- list("a"       = a_range,
-                    "b"       = b_range,
-                    "c"       = c_range,
-                    "epsilon" = epsilon_range)
+param.range <- list("lambda"  = c(0.1,1.),
+                    "epsilon" = c(0.,0.9)) # parameters range 
 ss_check <- TRUE
 
 # Generate the trees and save 
@@ -34,11 +28,11 @@ df.rates  <- out$rates # rate dataframe
 ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, df.rates, nn_type)
 
 # Parameters of the NN's training
-n_train    <- 900
-n_valid    <- 50
-n_test     <- 50
+n_train    <- 9000
+n_valid    <- 500
+n_test     <- 500
 n_epochs   <- 100
-batch_size <- 32
+batch_size <- 64
 patience   <- 10
 
 # Creation of the train, valid and test dataset

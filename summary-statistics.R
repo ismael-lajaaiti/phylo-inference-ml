@@ -683,8 +683,8 @@ get_staircaseness1 <- function(df.nodes, tree){
 get_topo_ss <- function(df.nodes, tree){
 
   ss.topo <- list("height"  = -999, "colless" = -999, "sackin"     = -999, 
-                  "wdratio" = -999, "deltaw"  = -999, #"max_ladder" = -999,
-                  #"il_nodes"= -999, 
+                  "wdratio" = -999, "deltaw"  = -999, "max_ladder" = -999,
+                  "il_nodes"= -999, 
                   "stair1"  = -999, "stair2"     = -999)
   
   ss.topo$height     <- get_height(df.nodes)
@@ -692,8 +692,8 @@ get_topo_ss <- function(df.nodes, tree){
   ss.topo$sackin     <- sum(df.nodes[df.nodes["is.tip"]==TRUE,]$depth)
   ss.topo$wdratio    <- get_wdratio(df.nodes) 
   ss.topo$deltaw     <- get_deltaw(df.nodes)
-  #ss.topo$max_ladder <- get_max_ladder(tree)
-  #ss.topo$il_nodes   <- get_il_nodes(tree)
+  ss.topo$max_ladder <- get_max_ladder(tree)
+  ss.topo$il_nodes   <- get_il_nodes(tree)
   ss.topo$stair1     <- get_staircaseness1(df.nodes, tree) 
   ss.topo$stair2     <- sum(df.nodes$stair, na.rm = TRUE)
   return(ss.topo)
@@ -883,12 +883,12 @@ divide_ltt.df_points <- function(ltt.df, n){
 #' @examples
 get_all_ss <- function(df.nodes, df.edges, tree){
   ss.bl   <- get_bl_ss(df.edges)                 # branch length ss 
-  #ss.topo <- get_topo_ss(df.nodes, tree)         # topological ss
+  ss.topo <- get_topo_ss(df.nodes, tree)         # topological ss
   ss.ltt.coord <- get_ltt_coords(tree)
   ss.ltt.slopes <- get_ltt_slopes(tree)
   
-  ss.all <- c(ss.bl, #ss.topo, 
-              ss.ltt.slopes, ss.ltt.coord)    # merge all ss in a single list 
+  ss.all <- c(ss.bl, list("n_taxa" = ceiling(nrow(df.nodes)/2)),
+              ss.topo, ss.ltt.slopes, ss.ltt.coord)    # merge all ss in a single list 
   return(ss.all)
 }
 
@@ -981,6 +981,15 @@ create_ltt.names.slope <- function(n=10){
 }
 
 
+create_ltt.names.topo <- function(){
+  
+  topo.names <- c("height", "colless", "sackin",
+                  "wdratio", "deltaw", "max_ladder", 
+                  "il_nodes", "stair1", "stair2")
+  
+  return(topo.names)
+}
+
 #' Create the vector containing the summary statistic names
 #'
 #'
@@ -997,14 +1006,13 @@ create_ss.names <- function(){
                 "i.3.mean", "i.3.med", "i.3.var",
                 "ie.1.mean", "ie.1.med", "ie.1.var",
                 "ie.2.mean", "ie.2.med", "ie.2.var",
-                "ie.3.mean", "ie.3.med", "ie.3.var")#,
-                #"height", "colless", "sackin",
-                #"wdratio", "deltaw", "max_ladder", 
-                #"il_nodes", "stair1", "stair2")
+                "ie.3.mean", "ie.3.med", "ie.3.var", "n_taxa")
   
+  ltt.names.topo  <- create_ltt.names.topo()
   ltt.names.slope <- create_ltt.names.slope()
-  ltt.names.coord  <- create_ltt.names.coord()
-  ss.names <- c(ss.names, ltt.names.slope, ltt.names.coord)
+  ltt.names.coord <- create_ltt.names.coord()
+  ss.names <- c(ss.names, ltt.names.topo, ltt.names.slope,
+                ltt.names.coord)
   
   return(ss.names)
 }
@@ -1115,6 +1123,25 @@ generate_ss_dataframe_from_trees <- function(trees, true.param){
 }
 
 
+
+scale_summary_statistics <- function(df, n_taxa, name.param){
+  col.ltt.t <- colnames(df)[substring(colnames(df),1,5) == "ltt_t"]
+  col.ltt.n <- colnames(df)[substring(colnames(df),1,5) == "ltt_N"]
+  col.ss    <- !(colnames(df) %in% c(col.ltt.t, col.ltt.n, name.param))
+  
+  df[col.ltt.t] <- df[col.ltt.t] / abs(min(df[col.ltt.t]))
+  df[col.ltt.n] <- df[col.ltt.n] / max(n_taxa)
+  df[col.ss]    <- scale(df[col.ss], center = FALSE, scale = TRUE)
+  
+  #col.to.scale <- c("sackin", "colless", "stair2")
+  #df[col.to.scale]    <- scale(df[col.to.scale],
+  #                             center = FALSE, scale = TRUE)
+
+  
+  return(df)
+}
+
+
 #' Convert a data.frame to a torch::dataset 
 #'
 #'
@@ -1132,19 +1159,22 @@ convert_ss_dataframe_to_dataset <- function(df){
     
     name <- "summary_statistics_dataset", 
     
-    initialize = function(df){
+    initialize = function(df, name.param){
 
       dataframe <- na.omit(df) # delete NA
       
-      # input data 
-      ss.names <- create_ss.names()
-      x = df[ss.names] %>% 
+      # input data
+      topo.names <- c("height", "colless", "sackin", "wdratio", "deltaw", "max_ladder",
+                      "il_nodes", "stair1", "stair2")
+      
+      #for (name in c("sackin", "colless")){df[name] <- 0}
+      
+      x = df[!(colnames(df) %in% c(name.param))] %>% 
         as.matrix()
       self$x <- torch_tensor(x)
       
       # target data 
-      target.names <- c("lambda", "mu")
-      y = df[target.names] %>% 
+      y = df[name.param] %>% 
         as.matrix()
       self$y <- torch_tensor(y)
   

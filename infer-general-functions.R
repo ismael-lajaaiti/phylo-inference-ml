@@ -830,6 +830,56 @@ generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
 }
 
 
+#' Compute the adjacency matrix of a phylo tree 
+#'
+#'
+#' @param tree phylo tree
+#'              
+#' @return adjacency matrix
+#' 
+#' @export
+#' @examples
+get_adjacency <- function(tree, size, to_tensor = TRUE){
+  adj   <- matrix(0, nrow = size, ncol = size) # empty adjacency matrix 
+  edge.mat    <- tree$edge # matrices of edge indices 
+  edge.length <- tree$edge.length # vector of edge lengths
+  n_edge <- length(edge.length) # number of edges
+  for (i in 1:n_edge){
+    u <- edge.mat[i,1] # 1st node
+    v <- edge.mat[i,2] # 2nd node 
+    adj[u, v] <- edge.length[i] # write edge in the adjacency matrix
+    adj[v, u] <- edge.length[i] # symmetric
+  }
+  if (to_tensor){adj <- torch_tensor(adj)}
+  return(adj)
+}
+
+
+#' Compute the adjacency matrix of a list of phylo trees
+#'
+#'
+#' @param trees list of phylo trees
+#'              
+#' @return corresponding list of adjacency matrices
+#' 
+#' @export
+#' @examples
+generate_adjacency_matrices <- function(trees, n_taxa){
+  size     <- 2*max(n_taxa) - 1 # max. total number of nodes of a tree 
+  list.adj <- list() # to store adjacency matrices 
+  n_trees  <- length(trees) # number of phylo trees 
+  cat("Computing adjacency matrices...\n")
+  for (n in 1:n_trees){
+    progress(value = n, max.value = n_trees, progress.bar = TRUE, 
+             init = (n == 1)) # print progress
+    tree <- trees[[n]] # extract tree
+    adj  <- get_adjacency(tree, size) # get its adjacency matrix 
+    list.adj[[n]] <- adj # save it 
+  }
+  cat("\nComputing adjacency matrices... Done.")
+  return(list.adj)
+}
+
 
 #' Generate a data.frame containing Lineage Through Time of phylo trees
 #'
@@ -986,6 +1036,21 @@ convert_ltt_dataframe_to_dataset_sizes <- function(df.ltt, df.rates){
   )
   
   return(ds.ltt)
+}
+
+
+convert_encode_to_dataset <- function(tensor.encode, true.param){
+  
+  ds.encode <- torch::dataset(
+    
+    initialize = function(tensor.encode, true.param){
+      self$x <- tensor.encode # input 
+      self$y <- torch_tensor(do.call(cbind, true.param)) # target
+    },
+    .getitem = function(i) {list(x = self$x[,i]$unsqueeze(1), y = self$y[i,])},
+    .length = function() {self$y$size()[[1]]}
+  )
+ return(ds.encode)
 }
 
 
