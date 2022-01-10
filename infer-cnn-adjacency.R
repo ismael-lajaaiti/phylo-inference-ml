@@ -1,6 +1,6 @@
-# ------------------------------------------------------------
-# INFERRING MACROEVOLUTIONARY RATES WITH CNN AND TREE ENCODING
-# ------------------------------------------------------------
+# ---------------------------------------------------------------
+# INFERRING MACROEVOLUTIONARY RATES WITH CNN AND ADJACENCY MATRIX
+# ---------------------------------------------------------------
 
 
 # Importing Libraries and Sources
@@ -10,33 +10,25 @@ source("infer-general-functions.R")
 source("neural-network-functions.R")
 
 
-
 # Defining global parameters
-
-ss_check <- TRUE
 device <- "cuda:1" # GPU where to run computations 
-nn_type <- "cnn-encode" # type of the model: Convolutional Neural Network w/
-                        # graph encoding 
+nn_type <- "cnn-adjacency" # type of the model: Convolutional Neural Network w/
 
 n_trees <- 10000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
 param.range <- list("lambda"  = c(0.1,1.),
-                    "q" = c(0.01,0.1)) # parameters range 
+                    "epsilon" = c(0.,0.9)) # parameters range 
 
 # Generate the trees and save 
 out        <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = TRUE)
 trees      <- out$trees # extract phylogenetic trees generated
-true.param <- out$param # extract true values of the parameters 
-true.param <- true.param[-c(2,3,4,6)]
-
+subtrees   <- list()
+for (n in 1:5000){subtrees[[n]] <- trees[[n]]}
+true.param <- as.list(as.data.frame(out$param)[1:5000,]) # extract true values of the parameters 
 
 # Create the corresponding encoding of the trees
-#tensor.encode <- generate_encoding(trees, n_taxa)
-tensor.encode <- readRDS("trees-dataset/ntrees-10000-ntaxa-100-1000-lambda-0.1-1-q-0.01-0.1-sscheck-TRUE-encode-bisse.rds")
-#saveRDS(tensor.encode %>% as.matrix(), "trees-dataset/ntrees-10000-ntaxa-100-1000-lambda-0.1-1-epsilon-0-0.9-sscheck-TRUE-encode.rds")
-#m <- tensor.encode %>% as.matrix()
-
-ds.encode     <- convert_encode_to_dataset(tensor.encode, true.param)
+list.adj   <- generate_adjacency_matrices(subtrees, n_taxa)
+ds.adj     <- convert_adjacency_to_dataset(list.adj, true.param)
 
 # Parameters of the NN's training
 n_train    <- 9000
@@ -44,27 +36,16 @@ n_valid    <- 500
 n_test     <- 500
 n_epochs   <- 100
 batch_size <- 64
-patience   <- 4
+patience   <- 10
 
 # Creation of the train, valid and test dataset
 train_indices     <- sample(1:n_trees, n_train)
 not_train_indices <- setdiff(1:n_trees, train_indices)
 valid_indices     <- sample(not_train_indices, n_valid)
 test_indices      <- setdiff(not_train_indices, valid_indices)
-
-extract_elements <- function(list_of_vectors, indices_to_extract){
-  l <- as.list(do.call(cbind, list_of_vectors)[indices_to_extract,] 
-               %>% as.data.frame())
-  return(l)
-}
-
-train_ds <- ds.encode(tensor.encode[, train_indices],
-                   extract_elements(true.param, train_indices))
-valid_ds <- ds.encode(tensor.encode[, valid_indices],
-                   extract_elements(true.param, valid_indices))
-test_ds  <- ds.encode(tensor.encode[, test_indices],
-                      extract_elements(true.param, test_indices))
-
+train_ds <- ds.ltt(df.ltt[, train_indices], df.rates[train_indices, ])
+valid_ds <- ds.ltt(df.ltt[, valid_indices], df.rates[valid_indices, ])
+test_ds  <- ds.ltt(df.ltt[, test_indices] , df.rates[test_indices, ])
 
 # Creation of the dataloader 
 train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
@@ -72,14 +53,11 @@ valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
 
 
-n_hidden <- 5
-n_layer  <- 4
-ker_size <- 10
-n_input  <- 3*max(n_taxa)
+n_hidden <- 15
+n_layer  <- 3
+ker_size <- 5
+n_input <- max(n_taxa)
 n_out    <- length(param.range)
-p_dropout <- 0.01
-
-compute_dim_ouput_flatten_cnn(3000, 5, 10)
 
 # Build the CNN
 
@@ -90,38 +68,28 @@ cnn.net <- nn_module(
   initialize = function(n_input, n_out, n_hidden, n_layer, ker_size) {
     self$conv1 <- nn_conv1d(in_channels = 1, out_channels = n_hidden, kernel_size = ker_size)
     self$conv2 <- nn_conv1d(in_channels = n_hidden, out_channels = 2*n_hidden, kernel_size = ker_size)
-    self$conv3 <- nn_conv1d(in_channels = 2*n_hidden, out_channels = 4*n_hidden, kernel_size = ker_size)
-    self$conv4 <- nn_conv1d(in_channels = 4*n_hidden, out_channels = 8*n_hidden, kernel_size = ker_size)
-    n_flatten  <- compute_dim_ouput_flatten_cnn(n_input, n_layer, ker_size)
-    self$fc1   <- nn_linear(in_features = n_flatten * (8*n_hidden), out_features = 100)
-    self$fc2   <- nn_linear(in_features = 100, out_features = n_out)
+    self$conv3 <- nn_conv1d(in_channels = 2*n_hidden, out_channels = 2*2*n_hidden, kernel_size = ker_size)
+    n_flatten <- compute_dim_ouput_flatten_cnn(n_input, n_layer, ker_size)
+    self$fc1 <- nn_linear(in_features = n_flatten * (2*2*n_hidden), out_features = 100)
+    self$fc2 <- nn_linear(in_features = 100, out_features = n_out)
   },
   
   forward = function(x) {
     x %>% 
       self$conv1() %>%
       nnf_relu() %>%
-      nnf_dropout(p = p_dropout) %>%
       nnf_avg_pool1d(2) %>%
       
       self$conv2() %>%
       nnf_relu() %>%
-      nnf_dropout(p = p_dropout) %>%
       nnf_avg_pool1d(2) %>%
       
       self$conv3() %>%
       nnf_relu() %>%
-      nnf_dropout(p = p_dropout) %>%
-      nnf_avg_pool1d(2) %>%
-
-      self$conv4() %>%
-      nnf_relu() %>%
-      nnf_dropout(p = p_dropout) %>%
       nnf_avg_pool1d(2) %>%
       
       torch_flatten(start_dim = 2) %>%
       self$fc1() %>%
-      nnf_dropout(p = p_dropout) %>%
       nnf_relu() %>%
       
       self$fc2()
@@ -139,7 +107,7 @@ train_batch <- function(b){
   opt$zero_grad()
   output <- cnn(b$x$to(device = device))
   target <- b$y$to(device = device)
-  loss <- nnf_mse_loss(output, target)
+  loss <- nnf_l1_loss(output, target)
   loss$backward()
   opt$step()
   loss$item()
@@ -148,7 +116,7 @@ train_batch <- function(b){
 valid_batch <- function(b) {
   output <- cnn(b$x$to(device = device))
   target <- b$y$to(device = device)
-  loss <- nnf_mse_loss(output, target)
+  loss <- nnf_l1_loss(output, target)
   loss$item()
 }
 
@@ -221,7 +189,7 @@ coro::loop(for (b in test_dl) {
 })
 
 # Prepare plot 
-name.param <- c("lambda", "q")
+name.param <- c("alpha", "beta", "gamma", "mu")
 
 # Save neural network predictions 
 #save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
@@ -234,18 +202,13 @@ true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indice
 fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
 mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
-mle.pred.test <- mle.pred.test[-c(2,3,4,6)]
 pred.param.test <- list("mle" = mle.pred.test)
-pred.param.test[["cnn_cblv"]] <- nn.pred
-param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
+pred.param.test[[nn_type]] <- nn.pred
+param.range.ajusted <- param.range[-4]
+param.range.ajusted[["mu"]] <- c(param.range[["c"]][1]*param.range[["epsilon"]][1],
+                                 param.range[["c"]][2]*param.range[["epsilon"]][2])
 
+plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted)
 
-plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
-                      param.range.ajusted, fname = "test_plot", 
-                      save = TRUE)
-
-plot_error_barplot_all(pred.param.test, true.param.test, param.range.ajusted, 
-                       save = TRUE, fname = "error_cnnCBLV_vs_MLE")
-
-#plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
-#                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)
+plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
+                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)

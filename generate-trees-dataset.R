@@ -2,7 +2,7 @@ source("infer-general-functions.R")
 
 
 type     <- "bisse"
-n_trees  <- 10000 # number of trees to generate
+n_trees  <- 10009 # number of trees to generate
 n_taxa   <- c(100,1000) 
 ss_check <- TRUE # check that all summary statistics can be computed 
 mle      <- TRUE # should mle predictions be computed and saved 
@@ -36,7 +36,7 @@ if (type == "expbd"){
 # BiSSE
 # -------------------------------
 if (type == "bisse"){
-  param.range <- list("lambda" = c(0.1,1.), "epsilon" = c(0.,.9), "q" = c(0.01,0.1))
+  param.range <- list("lambda" = c(0.1,1.), "q" = c(0.01,0.1))
 }
 # -------------------------------
 

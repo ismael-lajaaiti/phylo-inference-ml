@@ -10,6 +10,8 @@ library(ape)
 library(diversitree)
 library(castor)
 library(phangorn)
+library(svMisc)
+library(torch)
 
 
 #### end ####
@@ -169,6 +171,26 @@ encode_phylo <- function(tree){
   return(encoding)
 }
 
+encode_bisse <- function(tree){
+  inorder <- traverse_inorder(tree)
+  tips   <- c()
+  nodes  <- c()
+  states <- c()
+  dist_to_root <- castor::get_all_distances_to_root(tree)
+  dist_to_ancestor <- get_all_distances_to_ancestor(tree)
+  for (node in inorder){
+    if (is_tip(node, tree)){
+      tips <- c(tips, dist_to_ancestor[node])
+      states <- c(states, tree$tip.state[[node]])
+    }
+    else{
+      nodes <- c(nodes, dist_to_root[node])
+    }
+  }
+  encoding <- list("nodes" = nodes, "tips" = tips, "states" = states)
+  return(encoding)
+}
+
 
 #' Format the encoding of a phylo tree
 #'
@@ -184,14 +206,13 @@ encode_phylo <- function(tree){
 #' @export
 #' @examples
 format_encode <- function(tree.encode, max_taxa){
-  encode.vec <- rep(0, 2*max_taxa - 1)
-  n_tips  <- length(tree.encode$tips)
-  n_nodes <- length(tree.encode$nodes)
-  for (i in 1:n_nodes){
-    encode.vec[i] <- tree.encode$nodes[i]
-  }
-  for (i in 1:n_tips){
-    encode.vec[i + max_taxa - 1] <- tree.encode$tips[i]
+  n <- length(tree.encode) # n=2 if CRBD and n=3 if BiSSE
+  encode.vec <- rep(0, n*max_taxa)
+  for (i in 1:n){
+    encode.sublist <- tree.encode[[i]]
+    for (j in 1:length(encode.sublist)){
+      encode.vec[j + max_taxa*(i-1)] <- encode.sublist[j]
+    }
   }
   return(encode.vec)
 }
@@ -220,5 +241,30 @@ generate_encoding <- function(trees, n_taxa){
   cat("\nComputing encoding vectors... Done.\n")
   
   return(tensor.encode)
+}
+
+
+generate_encoding_bisse <- function(trees, n_taxa){
+  max_taxa <- max(n_taxa)
+  n_trees <- length(trees)
+  list.encode <- list()
+
+  cat("Computing encoding vectors...\n")
+  
+  for (n in 1:10){
+    progress(n, n_trees, progress.bar = TRUE, init = (n==1))
+    tree <- trees[[n]] # extract tree
+    tree.encode   <- encode_bisse(tree) # encode the tree
+    format.encode <- format_encode(tree.encode, max_taxa) # format the encoding
+    list.encode[[n]] <- format.encode # save to list 
+  }
+  
+  # Convert the list of vectors to a torch tensor 
+  matrix.encode <- as.data.frame(do.call(cbind, list.encode)) %>% 
+    as.matrix() 
+  
+  cat("\nComputing encoding vectors... Done.\n")
+  
+  return(matrix.encode)
 }
 

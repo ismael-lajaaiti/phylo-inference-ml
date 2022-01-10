@@ -1159,7 +1159,7 @@ convert_ss_dataframe_to_dataset <- function(df){
     
     name <- "summary_statistics_dataset", 
     
-    initialize = function(df, name.param){
+    initialize = function(df, name.param, exclude.param = ""){
 
       dataframe <- na.omit(df) # delete NA
       
@@ -1169,7 +1169,7 @@ convert_ss_dataframe_to_dataset <- function(df){
       
       #for (name in c("sackin", "colless")){df[name] <- 0}
       
-      x = df[!(colnames(df) %in% c(name.param))] %>% 
+      x = df[!(colnames(df) %in% c(name.param, exclude.param))] %>% 
         as.matrix()
       self$x <- torch_tensor(x)
       

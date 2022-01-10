@@ -8,15 +8,25 @@ source("neural-network-functions.R")
 
 
 nn_type <- "dnn-ss" # type of the model: Deep Neural Network w/ Summary Statistics
+model_type <- "bisse" # type of diversification model 
 
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)
 n_taxa  <- c(100,1000) # size of the trees
-lambda_range <- c(.1, 1.)
-epsilon_range <- c(0, 0.9)
-param.range <- list("lambda"  = lambda_range,
-                    "epsilon" = epsilon_range)
 
+# Parameter range of Constant Rate Birth Death model 
+param.range.crbd <- list("lambda"  = c(0.1,1.),  # speciation rate
+                         "epsilon" = c(0.,0.9))  # extinction rate 
+
+# Parameter range of BiSSE model 
+param.range.bisse <- list("lambda"  = c(0.1,1.),  # speciation rate
+                          "q"       = c(.01,.1))  # transition rate 0 <-> 1
+
+param.range.list <- list("crbd"  = param.range.crbd,
+                         "bisse" = param.range.bisse)
+
+param.range <- param.range.list[[model_type]] # select the range of parameters that 
+# correspond to the selected model 
 #param.range <- list("lambda" = c(0.1,1.), "epsilon" = c(0.,.9))
 ss_check <- TRUE
 save_model <- FALSE
@@ -26,11 +36,13 @@ save_preds <- FALSE
 out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check)
 trees      <- out$trees # contains the phylogenetic trees generated 
 true.param <- out$param
+true.param <- true.param[-c(2,3,4,6)]
 name.param <- names(true.param)
 n_param    <- length(name.param)
 
 # Create the corresponding summary statistics data.frame
 df <- load_dataset_summary_statistics(n_trees, n_taxa, param.range)
+df <- df_add_tipstate(df, trees)
 df <- scale_summary_statistics(df, n_taxa, name.param)
 
 # Parameters of the NN's training
@@ -45,9 +57,9 @@ train_indices <- sample(1:nrow(df), n_train)
 not_train_indices <- setdiff(1:nrow(df), train_indices)
 valid_indices <- sample(not_train_indices, n_valid)
 test_indices  <- setdiff(not_train_indices, valid_indices)
-train_ds <- ds(df[train_indices, ], name.param)
-valid_ds <- ds(df[valid_indices, ], name.param)
-test_ds  <- ds(df[test_indices, ], name.param)
+train_ds <- ds(df[train_indices, ], name.param, c("lambda1", "mu0", "mu1", "q10"))
+valid_ds <- ds(df[valid_indices, ], name.param, c("lambda1", "mu0", "mu1", "q10"))
+test_ds  <- ds(df[test_indices, ], name.param, c("lambda1", "mu0", "mu1", "q10"))
 
 # Creation of the dataloader 
 train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
@@ -123,10 +135,9 @@ if (save_model){
 }
 
 # Evaluate DNN performance w/ predictions 
-preds           <- predict(dnn.fit, test_dl)$to(device = "cpu") # get DNN preds
+preds   <- predict(dnn.fit, test_dl)$to(device = "cpu") # get DNN preds
 nn.pred <- preds %>% as.matrix %>% as.data.frame() %>% as.list()
 names(nn.pred) <- name.param
-
 if (save_preds){
   # Save neural network predictions 
   save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
@@ -135,36 +146,25 @@ if (save_preds){
 }
 
 
-mle.pred.test <- get_mle_predictions("crbd", trees[test_indices])
-
 # Prepare plot 
-name.param.plot <- c("lambda", "mu")
+name.param.plot <- c("lambda", "q")
 
 # Plot Predictions 
 true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])
 fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
 mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
+mle.pred.test <- mle.pred.test[-c(2,3,4,6)]
 pred.param.test <- list("mle" = mle.pred.test)
 pred.param.test[[nn_type]] <- nn.pred
-param.range.ajusted <- param.range[-2]
-param.range.ajusted[["mu"]] <- c(param.range[["lambda"]][1]*param.range[["epsilon"]][1],
-                                 param.range[["lambda"]][2]*param.range[["epsilon"]][2])
-
-param.range.ajusted <- param.range[-4]
-param.range.ajusted[["mu"]] <- c(param.range[["c"]][1]*param.range[["epsilon"]][1],
-                                 param.range[["c"]][2]*param.range[["epsilon"]][2])
-
-plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted)
-
-plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
-                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)
+param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
 
 
+plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
+                      param.range.ajusted, fname = "pred_true_dnnSS_vs_MLE", 
+                      save = TRUE)
+
+plot_error_barplot_all(pred.param.test, true.param.test, param.range.ajusted, 
+                       save = TRUE, fname = "error_dnnSS_vs_MLE")
 
 
-# Plot predictions (DNN and MLE)
-trees_test <- trees[test_indices] # test trees
-plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
-                                 lambda_range, epsilon_range, n_layer, n_hidden, n_train,
-                                 save = TRUE)

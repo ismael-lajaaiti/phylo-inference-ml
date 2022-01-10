@@ -35,9 +35,9 @@ df.rates  <- out$rates # rate dataframe
 ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, df.rates, nn_type)
 
 # Parameters of the NN's training
-n_train    <- 900
-n_valid    <- 50
-n_test     <- 50
+n_train    <- 9000
+n_valid    <- 500
+n_test     <- 500
 n_epochs   <- 100 
 batch_size <- 32
 patience   <- 10
@@ -305,7 +305,7 @@ names(nn.pred) <- names(true.param)
 # Compute predictions 
 
 if (length(n_taxa) == 2){
-  random_iter <- sample(1:length(test.batch), 40)
+  random_iter <- sample(1:length(test.batch), 500)
   test_indices <- recover_test_indices[random_iter]
   coro::loop(for (i in random_iter) {
     b <- test.batch[[i]]

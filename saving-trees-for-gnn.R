@@ -1,6 +1,3 @@
-
-
-
 # Libraries and Sources 
 library(svMisc)
 source("infer-general-functions.R")
@@ -148,7 +145,8 @@ get_time.asym <- function(tree, node){
 n_trees  <- 10000 # number of trees 
 n_taxa   <- c(100,1000) # taxa range
 param.range <- list("lambda" = c(0.1,1.),
-                    "epsilon" = c(0.,.9)) # range of each parameters 
+                    "epsilon" = c(0.,.9), 
+                    "q"       = c(0.01,.1)) # range of each parameters 
 ss_check <- TRUE # no NAs in the summary statistics?
 
 # Preparation 
@@ -159,7 +157,7 @@ list.df.tree <- list() # where dataframe will be stored
 
 # Computing the node and edge data frame for each tree and save them to the list
 for (i in 1:n_trees){
-  progress(i, max.value = 10000, progress.bar = TRUE, init = (i == 1))
+  progress(i, max.value = n_trees, progress.bar = TRUE, init = (i == 1))
   tree <- trees[[i]]
   df.edge <- get_edge_df(tree)
   df.node <- get_node_df(tree)

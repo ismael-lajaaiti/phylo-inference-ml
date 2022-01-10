@@ -7,19 +7,35 @@ source("neural-network-functions.R")
 
 device <- "cuda:1" # GPU where to run computations 
 
-nn_type <- "cnn-ltt" # type of the model: Convolutional Neural Network w/ LTT
+nn_type <- "cnn-ltt" # type of the network: Convolutional Neural Network w/ LTT
+model_type <- "bisse" # type of diversification model 
 
 # Parameters of phylogenetic trees
 n_trees <- 10000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
-param.range <- list("lambda"  = c(0.1,1.),
-                    "epsilon" = c(0.,0.9)) # parameters range 
+
+
+# Parameter range of Constant Rate Birth Death model 
+param.range.crbd <- list("lambda"  = c(0.1,1.),  # speciation rate
+                          "epsilon" = c(0.,0.9))  # extinction rate 
+
+# Parameter range of BiSSE model 
+param.range.bisse <- list("lambda"  = c(0.1,1.),  # speciation rate
+                          "q"       = c(.01,.1))  # transition rate 0 <-> 1
+
+param.range.list <- list("crbd"  = param.range.crbd,
+                         "bisse" = param.range.bisse)
+
+param.range <- param.range.list[[model_type]] # select the range of parameters that 
+                                         # correspond to the selected model 
+
 ss_check <- TRUE
 
 # Generate the trees and save 
 out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check)
 trees      <- out$trees # contains the phylogenetic trees generated
 true.param <- out$param # contains the true values of the parameters 
+true.param <- true.param[-c(2,3,4,6)]
 
 # Create the corresponding summary statistics data.frame
 out       <- generate_ltt_dataframe(trees, n_taxa, true.param)
@@ -50,11 +66,11 @@ valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
 
 
-n_hidden <- 15
+n_hidden <- 10
 n_layer  <- 3
 ker_size <- 5
 n_input <- max(n_taxa)
-n_out    <- length(param.range)
+n_out    <- length(true.param)
 
 # Build the CNN
 
@@ -102,18 +118,20 @@ opt <- optim_adam(params = cnn$parameters) # optimizer
 
 train_batch <- function(b){
   opt$zero_grad()
+  if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
   output <- cnn(b$x$to(device = device))
   target <- b$y$to(device = device)
-  loss <- nnf_l1_loss(output, target)
+  loss <- nnf_mse_loss(output, target)
   loss$backward()
   opt$step()
   loss$item()
 }
 
 valid_batch <- function(b) {
+  if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
   output <- cnn(b$x$to(device = device))
   target <- b$y$to(device = device)
-  loss <- nnf_l1_loss(output, target)
+  loss <- nnf_mse_loss(output, target)
   loss$item()
 }
 
@@ -128,35 +146,37 @@ last_loss <- 100
 
 while (epoch < n_epochs & trigger < patience) {
   
-  # Training part 
+  # Training 
   cnn$train()
   train_loss <- c()
-  
-  coro::loop(for (b in train_dl) {
+  coro::loop(for (b in train_dl) { # loop over batches 
     loss <- train_batch(b)
     train_loss <- c(train_loss, loss)
   })
   
+  # Print Epoch and value of Loss function 
   cat(sprintf("epoch %0.3d/%0.3d - train - loss: %3.5f \n",
               epoch, n_epochs, mean(train_loss)))
   
-  # Evaluation part 
+  # Validation 
   cnn$eval()
   valid_loss <- c()
-  
-  coro::loop(for (b in test_dl) {
+  coro::loop(for (b in test_dl) { # loop over batches 
     loss <- valid_batch(b)
     valid_loss <- c(valid_loss, loss)
   })
-  
   current_loss <- mean(valid_loss)
-  if (current_loss > last_loss){trigger <- trigger + 1}
+  
+  # Early Stopping 
+  if (current_loss > last_loss){trigger <- trigger + 1} 
   else{
     trigger   <- 0
     last_loss <- current_loss
   }
   
-  cat(sprintf("epoch %0.3d/%0.3d - valid - loss: %3.5f \n", epoch, n_epochs, current_loss))
+  # Print Epoch and value of Loss function
+  cat(sprintf("epoch %0.3d/%0.3d - valid - loss: %3.5f \n",
+              epoch, n_epochs, current_loss))
   
   epoch <- epoch + 1 
 }
@@ -179,6 +199,7 @@ names(nn.pred) <- names(true.param)
 
 # Compute predictions 
 coro::loop(for (b in test_dl) {
+  if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
   out <- cnn(b$x$to(device = device))
   pred <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
   #true <- as.numeric(b$y)
@@ -186,7 +207,7 @@ coro::loop(for (b in test_dl) {
 })
 
 # Prepare plot 
-name.param <- c("alpha", "beta", "gamma", "mu")
+name.param <- c("lambda_0", "q_0")
 
 # Save neural network predictions 
 #save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
@@ -199,14 +220,15 @@ true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indice
 fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
 mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
+mle.pred.test <- mle.pred.test[-c(2,3,4,6)]
 pred.param.test <- list("mle" = mle.pred.test)
 pred.param.test[[nn_type]] <- nn.pred
-param.range.ajusted <- param.range[-4]
-param.range.ajusted[["mu"]] <- c(param.range[["c"]][1]*param.range[["epsilon"]][1],
-                                 param.range[["c"]][2]*param.range[["epsilon"]][2])
+param.range.ajusted <- list(c(0.1,1.), c(0.01,0.1))
 
-plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted)
+plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
+                      param.range.ajusted, fname = "pred_true_cnnLTT_vs_MLE", 
+                      save = TRUE)
 
-plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
-                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)
+plot_error_barplot_all(pred.param.test, true.param.test, param.range.ajusted, 
+                       save = TRUE, fname = "error_cnnLTT_vs_MLE")
 

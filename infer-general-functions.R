@@ -260,30 +260,48 @@ plot_pred_vs_true <- function(pred.list, true.list, names, save = FALSE, fname =
 }
 
 
-plot_pred_vs_true_single <- function(pred, true, name, range, sub = '', 
-                                     lm = TRUE, print_mse = TRUE, 
+plot_pred_vs_true_single <- function(pred, true, name, range.out, range.in,
+                                     main = '', lm = TRUE, print_mse = TRUE, 
                                      print_r2 = FALSE){
   
-  range.size <- range[2] - range[1]
+  range.size <- range.out[2] - range.out[1]
   marge <- 0.2 * range.size
-  xy.lim <- c(range[1] - marge, range[2] + marge)
-  mse <- ifelse(print_mse, round(RMSE(pred, true)/mean(true),3), NA)
-  r2  <- ifelse(print_r2, round(R2_Score(pred, true),3), NA)
-  main <- create_main_plot_pred_vs_true(name, print_r2, print_mse, r2, mse)
-  plot(true, pred, main = main, sub = sub, xlim = xy.lim, ylim = xy.lim, cex = .5, col = alpha("black", .5))
+  xy.lim <- c(range.out[1] - marge, range.out[2] + marge)
+  filter_param <- filter_preds_boundary(pred, true, range.in[1], range.in[2])
+  pred.in  <- filter_param$pred.in
+  true.in  <- filter_param$true.in
+  pred.out <- filter_param$pred.out
+  true.out <- filter_param$true.out
+  mse <- ifelse(print_mse, round(RMSE(pred.in, true.in)/mean(true.in),3), NA)
+  r2  <- ifelse(print_r2, round(R2_Score(pred.in, true.in),3), NA)
+  sub <- create_main_plot_pred_vs_true(name, print_r2, print_mse, r2, mse)
+  sub <- ""
+  lab.pred <- TeX(paste("$\\", name, "_{pred}$", sep=""))
+  lab.true <- TeX(paste("$\\", name, "_{true}$", sep=""))
+  plot(true.in, pred.in, main = main, sub = sub, xlim = xy.lim, ylim = xy.lim,
+       cex = .6, col = alpha("black", .7), xlab = lab.true, ylab = lab.pred)
+  points(true.out, pred.out, cex = .6, col = alpha("darkorange4", .7))
   abline(0,1)
   if (lm){
-    fit <- lm(pred ~ true)
+    fit <- lm(pred.in ~ true.in)
     sig = summary(fit)$coefficients[2,4]
     abline(fit, col="red", lty = ifelse(sig < .05,1,2))
   }
 }
 
 
-plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.range,
+plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.range.out,
+                                  param.range.in,
                                   save = FALSE, fname = NA, lm = TRUE,
                                   print_mse = TRUE, print_r2 = FALSE){
   
+  
+  
+  name.model.tex <- list("mle" = TeX("MLE"), "dnn_ss" = TeX("$DNN_{SS}$"), 
+                         "cnn_ltt" = TeX("$CNN_{LTT}$"),
+                         "rnn_ltt" = TeX("$RNN_{LTT}$"),
+                         "cnn_cblv" = TeX("$CNN_{CBLV}$"),
+                         "gnn_phylo" = TeX("$GNN_{Phylo}$"))
   
   n_model <- length(pred.param)
   name.model <- names(pred.param)
@@ -300,11 +318,13 @@ plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.rang
   
   for (i in 1:n_model){
     pred.model <- pred.param[[i]]
+    model <- name.model.tex[[name.model[i]]]
     for (j in 1:n_param){
       pred <- pred.model[[j]]
       true <- true.param[[j]]
-      plot_pred_vs_true_single(pred, true, name.param[j], param.range[[j]], 
-                               sub = name.model[i], lm = lm, print_mse = print_mse,
+      plot_pred_vs_true_single(pred, true, name.param[j], param.range.out[[j]], 
+                               param.range.in[[j]],
+                               main = model, lm = lm, print_mse = print_mse,
                                print_r2 = print_r2)  
     }
   }
@@ -405,12 +425,13 @@ get_mle_predictions <- function(type, trees){
     
     else if (type == "bisse"){
       lik <- make.bisse(tree, tree$tip.state)
-      lik <- constrain(lik, lambda0 ~ lambda1 - mu1 + mu0)
+      lik <- constrain(lik, lambda1 ~ 2*lambda0)
       lik <- constrain(lik, q01 ~ q10)
+      lik <- constrain(lik, mu0 ~ 0.)
+      lik <- constrain(lik, mu1 ~ 0.)
       p <- starting.point.bisse(tree)
       fit <- find.mle(lik, p, method="subplex")
-      lambda0 <- fit$par[[1]] - fit$par[[3]] + fit$par[[2]]
-      pred <- c(lambda0, as.numeric(fit$par), fit$par[[4]])
+      pred <- c(as.numeric(fit$par.full))
     }
     
     for (j in 1:n_param){
@@ -421,6 +442,93 @@ get_mle_predictions <- function(type, trees){
     progress(i, n_trees, progress.bar = TRUE, init = (i==1)) # print progression
   }
   return(pred.param)
+}
+
+
+plot_error_barplot_all <- function(pred.param, true.param, param.range.in, save = FALSE, fname = NA){
+  
+
+  n_param <- length(true.param) # number of parameters 
+  n_model <- length(pred.param) # number of inference models 
+  
+  par(mfrow = c(n_param, 1)) # prepare plot 
+
+  if (save){
+    aspect_ratio <- 1.62
+    fname <- paste(fname, "pdf", sep = ".")
+    pdf(fname, width = 10/n_param, height = 10/aspect_ratio, pointsize = 15/sqrt(aspect_ratio))
+  }
+  
+  name.param.list <- names(true.param) # list of parameter names
+  name.model.list <- names(pred.param) # list of inference model names 
+  theil_coef.list <- vector(mode = "list", length = n_param) 
+  names(theil_coef.list) <- name.param.list
+  
+  # Compute the split error for all inference models and all parameters 
+  for (i in 1:n_param){
+    name.param <- name.param.list[i] # name of the parameter 
+    true <- true.param[[i]] # true parameters vector
+    range.in <- param.range.in[[i]] # range of the inner domain of interest 
+    for (j in 1:n_model){
+      name.model <- name.model.list[[j]] # name of the inference model 
+      pred <- pred.param[[j]][[i]] # pred parameters vector
+      pred_true.filter <- filter_preds_boundary(pred, true, range.in[1],
+                                                range.in[2])
+      pred.in <- pred_true.filter$pred.in # predictions in the inner domain
+      true.in <- pred_true.filter$true.in # true values in the inner domain 
+      theil_coef <- get_theil_coefficients(pred.in, true.in) # get the split error 
+      theil_coef.list[[i]][[name.model]] <- theil_coef # save split error 
+    }
+  }
+  
+
+  for (i in 1:n_param){
+    plot_error_barplot_single(theil_coef.list[[i]], name.param.list[[i]])
+  }
+
+  if (save){dev.off()}
+
+}
+
+
+plot_error_barplot_single <- function(theil_coef_list, name.param){
+  
+  name.model.tex <- list("mle" = TeX("MLE"), "dnn_ss" = TeX("$DNN_{SS}$"), 
+                         "cnn_ltt" = TeX("$CNN_{LTT}$"),
+                         "rnn_ltt" = TeX("$RNN_{LTT}$"),
+                         "cnn_cblv" = TeX("$CNN_{CBLV}$"),
+                         "gnn_phylo" = TeX("$GNN_{Phylo}$"),
+                         "cnn-ltt" = TeX("$CNN_{LTT}$"), "dnn-ss" = TeX("$DNN_{SS}$"),
+                         "rnn-ltt" = TeX("$RNN_{LTT}$"),
+                         "cnn-cblv" = TeX("$CNN_{CBLV}$"),
+                         "gnn-phylo" = TeX("$GNN_{Phylo}$"))
+  
+  df.error.decomp <- data.frame(matrix(ncol = length(theil_coef_list), nrow = 3))
+  colnames(df.error.decomp) <- names(theil_coef_list)
+  rownames(df.error.decomp) <- c("Bias I", "Bias S", "Var")
+  
+  for (model in 1:length(theil_coef_list)){
+    for (error in 3:5){
+      err <- theil_coef_list[[model]][[error]]
+      df.error.decomp[error - 2, model] <- err
+    }
+  }
+  
+  names.arg <- c()
+  for (name in colnames(df.error.decomp)){
+    names.arg <- c(names.arg, name.model.tex[[name]])
+  } 
+  
+  legend <- c("Bias I", "Bias S", "Var")
+
+  ylab <- TeX(paste("$\\", name.param, "_{err}$", sep=""))
+  
+  barplot(as.matrix(df.error.decomp[legend,]), col = c("purple", "blue","darkorange"),
+          ylab = ylab, names.arg = names.arg)
+  legend("topleft",                                   
+         legend = legend,
+         fill = c("purple", "blue","darkorange"))
+  
 }
 
 
@@ -465,10 +573,10 @@ plot_bars_mle_vs_nn <- function(pred.list, true.list, nn_type, name.list, save =
   }
   
   rownames(df.error.decomp) <- c("Bias", "Slope", "Variance")
-  barplot(as.matrix(df.error.decomp), col = c("purple", "blue","darkgreen"), ylab = "Error")
+  barplot(as.matrix(df.error.decomp), col = c("purple", "blue","darkorange"), ylab = "Error")
   legend("topleft",                                   
          legend = c("Bias", "Slope", "Variance"),
-         fill = c("purple", "blue","darkgreen"))
+         fill = c("purple", "blue","darkorange"))
   
   
   if (save){dev.off()}
@@ -781,12 +889,14 @@ generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   
   while(length(trees) < n_trees){
     lambda.range <- param.range[[1]]
-    lambda <- runif(2, lambda.range[1], lambda.range[2])
-    r <- runif(1, max(lambda)/10, min(lambda))
-    mu <- lambda - r
-    q.range <- param.range[[3]]
-    q  <- rep(runif(1, q.range[1], q.range[2]), 2)
-    vec.param <- c(lambda, mu, q)
+    q.range <- param.range[[2]]
+    lambda0 <- runif(1, lambda.range[1], lambda.range[2])
+    lambda1 <- 2*lambda0
+    mu0     <- 0.
+    mu1     <- 0.
+    q01     <- runif(1, q.range[1], q.range[2])
+    q10     <- q01
+    vec.param <- c(lambda0, lambda1, mu0, mu1, q01, q10)
     n_taxa.i <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
     
     tree <- NULL
@@ -1044,7 +1154,7 @@ convert_encode_to_dataset <- function(tensor.encode, true.param){
   ds.encode <- torch::dataset(
     
     initialize = function(tensor.encode, true.param){
-      self$x <- tensor.encode # input 
+      self$x <- torch_tensor(tensor.encode) # input 
       self$y <- torch_tensor(do.call(cbind, true.param)) # target
     },
     .getitem = function(i) {list(x = self$x[,i]$unsqueeze(1), y = self$y[i,])},
@@ -1052,6 +1162,21 @@ convert_encode_to_dataset <- function(tensor.encode, true.param){
   )
  return(ds.encode)
 }
+
+
+filter_preds_boundary <- function(pred, true, lower = .15, upper = .8){
+  
+  n <- length(true)
+  indices.in  <- which(true > lower & true < upper)
+  indices.out <- setdiff(1:n, indices.in)
+  out <- list("pred.in"  = pred[indices.in], 
+              "true.in"  = true[indices.in],
+              "pred.out" = pred[indices.out], 
+              "true.out" = true[indices.out])
+  
+  return(out)
+}
+
 
 
 get_backbone_save_name <- function(n_trees, n_taxa, param.range){
@@ -1322,6 +1447,24 @@ get_preds_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_
   fname.preds <- paste(dir.preds, fname.preds, ".rds", sep = "")
   
   return(fname.preds)
+}
+
+
+df_add_tipstate <- function(df, trees){
+  
+  n_trees <- length(trees)
+  
+  vec_prop.tip.state <- c()
+  
+  for (n in 1:n_trees){
+    tree <- trees[[n]]
+    prop.tip.state <- mean(as.numeric(tree$tip.state))
+    vec_prop.tip.state <- c(vec_prop.tip.state, prop.tip.state)
+  }
+  
+  df$prop.tip.state <- vec_prop.tip.state
+  
+  return(df)
 }
 
 
