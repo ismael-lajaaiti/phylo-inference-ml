@@ -235,8 +235,7 @@ generate_encoding <- function(trees, n_taxa){
   
   # Convert the list of vectors to a torch tensor 
   tensor.encode <- as.data.frame(do.call(cbind, list.encode)) %>% 
-    as.matrix() %>%
-    torch_tensor()
+    as.matrix() 
   
   cat("\nComputing encoding vectors... Done.\n")
   
@@ -251,7 +250,7 @@ generate_encoding_bisse <- function(trees, n_taxa){
 
   cat("Computing encoding vectors...\n")
   
-  for (n in 1:10){
+  for (n in 1:n_trees){
     progress(n, n_trees, progress.bar = TRUE, init = (n==1))
     tree <- trees[[n]] # extract tree
     tree.encode   <- encode_bisse(tree) # encode the tree

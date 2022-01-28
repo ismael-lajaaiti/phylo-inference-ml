@@ -11,7 +11,7 @@ nn_type <- "cnn-ltt" # type of the network: Convolutional Neural Network w/ LTT
 model_type <- "bisse" # type of diversification model 
 
 # Parameters of phylogenetic trees
-n_trees <- 10000 # total number of trees (train + valid + test)
+n_trees <- 100000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
 
 
@@ -32,33 +32,33 @@ param.range <- param.range.list[[model_type]] # select the range of parameters t
 ss_check <- TRUE
 
 # Generate the trees and save 
-out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check)
-trees      <- out$trees # contains the phylogenetic trees generated
+out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check, 
+                            load_trees = FALSE)
 true.param <- out$param # contains the true values of the parameters 
 true.param <- true.param[-c(2,3,4,6)]
 
 # Create the corresponding summary statistics data.frame
-out       <- generate_ltt_dataframe(trees, n_taxa, true.param)
-df.ltt    <- out$ltt   # ltt dataframe 
-df.rates  <- out$rates # rate dataframe
-ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, df.rates, nn_type)
+fname.ltt <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)$ltt
+df.ltt <- readRDS(fname.ltt)
+ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, true.param, nn_type)
 
 # Parameters of the NN's training
-n_train    <- 9000
-n_valid    <- 500
-n_test     <- 500
+n_train    <- 90000 
+n_valid    <- 5000
+n_test     <- 5000
 n_epochs   <- 100
 batch_size <- 64
-patience   <- 10
+patience   <- 4
 
 # Creation of the train, valid and test dataset
 train_indices     <- sample(1:n_trees, n_train)
 not_train_indices <- setdiff(1:n_trees, train_indices)
 valid_indices     <- sample(not_train_indices, n_valid)
 test_indices      <- setdiff(not_train_indices, valid_indices)
-train_ds <- ds.ltt(df.ltt[, train_indices], df.rates[train_indices, ])
-valid_ds <- ds.ltt(df.ltt[, valid_indices], df.rates[valid_indices, ])
-test_ds  <- ds.ltt(df.ltt[, test_indices] , df.rates[test_indices, ])
+
+train_ds <- ds.ltt(df.ltt[, train_indices], extract_elements(true.param, train_indices))
+valid_ds <- ds.ltt(df.ltt[, valid_indices], extract_elements(true.param, valid_indices))
+test_ds  <- ds.ltt(df.ltt[, test_indices] , extract_elements(true.param, test_indices))
 
 # Creation of the dataloader 
 train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
@@ -207,7 +207,7 @@ coro::loop(for (b in test_dl) {
 })
 
 # Prepare plot 
-name.param <- c("lambda_0", "q_0")
+name.param <- c("lambda_0", "q")
 
 # Save neural network predictions 
 #save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
@@ -227,8 +227,8 @@ param.range.ajusted <- list(c(0.1,1.), c(0.01,0.1))
 
 plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
                       param.range.ajusted, fname = "pred_true_cnnLTT_vs_MLE", 
-                      save = TRUE)
+                      save = FALSE)
 
 plot_error_barplot_all(pred.param.test, true.param.test, param.range.ajusted, 
-                       save = TRUE, fname = "error_cnnLTT_vs_MLE")
+                       name.param, save = FALSE, fname = "error_cnnLTT_vs_MLE")
 

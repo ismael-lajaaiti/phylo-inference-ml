@@ -18,33 +18,67 @@ device <- "cuda:1" # GPU where to run computations
 nn_type <- "cnn-encode" # type of the model: Convolutional Neural Network w/
                         # graph encoding 
 
-n_trees <- 10000 # total number of trees (train + valid + test)
+n_trees <- 100000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
 param.range <- list("lambda"  = c(0.1,1.),
                     "q" = c(0.01,0.1)) # parameters range 
 
 # Generate the trees and save 
-out        <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = TRUE)
-trees      <- out$trees # extract phylogenetic trees generated
+out        <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = TRUE, 
+                                 load_trees = FALSE)
 true.param <- out$param # extract true values of the parameters 
 true.param <- true.param[-c(2,3,4,6)]
 
 
+
 # Create the corresponding encoding of the trees
 #tensor.encode <- generate_encoding(trees, n_taxa)
-tensor.encode <- readRDS("trees-dataset/ntrees-10000-ntaxa-100-1000-lambda-0.1-1-q-0.01-0.1-sscheck-TRUE-encode-bisse.rds")
-#saveRDS(tensor.encode %>% as.matrix(), "trees-dataset/ntrees-10000-ntaxa-100-1000-lambda-0.1-1-epsilon-0-0.9-sscheck-TRUE-encode.rds")
-#m <- tensor.encode %>% as.matrix()
+fname.encode <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)$encode
+mat.encode <- readRDS(fname.encode)
 
-ds.encode     <- convert_encode_to_dataset(tensor.encode, true.param)
+mat.encode.rd <- mat.encode 
+mat.encode.rd <- randomize_tips(mat.encode.rd, trees)
+
+randomize_tips <- function(mat.encode.rd, trees){
+  for (i in 1:n_trees){
+    n_tips <- trees[[i]]$Nnode + 1
+    end <- 2000 + n_tips
+    mat.encode.rd[2000:end,i] <- sample(mat.encode.rd[2000:end,i])
+  
+    progress(i, max.value = n_trees, progress.bar = TRUE, init = (i==1))
+    }
+  
+  return(mat.encode.rd)
+}
+
+replace_values <- function(vec, old_val, new_val){
+  n <- length(vec)
+  for (i in 1:n){
+    if (vec[i] == old_val){vec[i] <- new_val}
+  }
+  return(vec)
+}
+
+relabel_tips <- function(mat, trees){
+  for (i in 1:n_trees){
+    n_tips <- trees[[i]]$Nnode +1
+    mat[2000:2000+n_tips,i] <- replace_values(mat[2000:2000+n_tips,i], 0, -1)
+  }
+  return(mat)
+} 
+
+mat.encode.new <- relabel_tips(mat.encode, trees)
+
+
+ds.encode     <- convert_encode_to_dataset(mat.encode.rd, true.param)
 
 # Parameters of the NN's training
-n_train    <- 9000
-n_valid    <- 500
-n_test     <- 500
+n_train    <- 90000
+n_valid    <- 5000
+n_test     <- 5000
 n_epochs   <- 100
 batch_size <- 64
-patience   <- 4
+patience   <- 3
 
 # Creation of the train, valid and test dataset
 train_indices     <- sample(1:n_trees, n_train)
@@ -58,11 +92,11 @@ extract_elements <- function(list_of_vectors, indices_to_extract){
   return(l)
 }
 
-train_ds <- ds.encode(tensor.encode[, train_indices],
+train_ds <- ds.encode(mat.encode.rd[, train_indices],
                    extract_elements(true.param, train_indices))
-valid_ds <- ds.encode(tensor.encode[, valid_indices],
+valid_ds <- ds.encode(mat.encode.rd[, valid_indices],
                    extract_elements(true.param, valid_indices))
-test_ds  <- ds.encode(tensor.encode[, test_indices],
+test_ds  <- ds.encode(mat.encode.rd[, test_indices],
                       extract_elements(true.param, test_indices))
 
 
@@ -72,14 +106,13 @@ valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
 
 
-n_hidden <- 5
+n_hidden <- 10
 n_layer  <- 4
 ker_size <- 10
 n_input  <- 3*max(n_taxa)
 n_out    <- length(param.range)
 p_dropout <- 0.01
 
-compute_dim_ouput_flatten_cnn(3000, 5, 10)
 
 # Build the CNN
 
@@ -236,16 +269,17 @@ mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
 mle.pred.test <- mle.pred.test[-c(2,3,4,6)]
 pred.param.test <- list("mle" = mle.pred.test)
-pred.param.test[["cnn_cblv"]] <- nn.pred
+pred.param.test[["cnn_cblv_disotips"]] <- nn.pred
 param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
+param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(.02,.09))
 
 
 plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
-                      param.range.ajusted, fname = "test_plot", 
+                      param.range.in, fname = "plot_cnnCBLV_tipsornottips_cnnLTT_vs_MLE", 
                       save = TRUE)
 
-plot_error_barplot_all(pred.param.test, true.param.test, param.range.ajusted, 
-                       save = TRUE, fname = "error_cnnCBLV_vs_MLE")
+plot_error_barplot_all(pred.param.test[reorder_names], true.param.test, param.range.in, 
+                       save = TRUE, fname = "error_cnnCBLV_tipsornottips_cnnLTT_vs_MLE")
 
 #plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
 #                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)

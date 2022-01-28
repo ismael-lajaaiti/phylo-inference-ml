@@ -38,7 +38,7 @@ get_edge_df <- function(tree){
 #' @examples
 get_node_df <- function(tree){
   n_nodes <- 2*tree$Nnode+1
-  name.attr <- c("dist", "in.edge", "mean.edge", "time.asym",
+  name.attr <- c("dist", "mean.edge", "time.asym",
                  "clade.asym", "ancestor", "descendant")
   n_attr    <- length(name.attr)
   nodes.attr <- vector(mode = "list", length = n_attr)
@@ -47,27 +47,32 @@ get_node_df <- function(tree){
   nodes.attr$ancestor <- get_all_distances_to_root(tree, as_edge_count = TRUE)
   for (i in 1:n_nodes){
     descendant <- length(Descendants(tree, i, "all"))
-    in.edge <- get_in.edge.length(tree, i)
+    #in.edge <- get_in.edge.length(tree, i)
     mean.edge <- get_mean.edge.length(tree, i)
     time.asym <- get_time.asym(tree, i)
     clade.asym <- get_clade.asym(tree, i)
+    state <- get_node_state(tree, i)
     nodes.attr$descendant <- c(nodes.attr$descendant, descendant)
     nodes.attr$clade.asym <- c(nodes.attr$clade.asym, clade.asym)
-    nodes.attr$time.asym <- c(nodes.attr$time.asym, time.asym)
-    nodes.attr$mean.edge <- c(nodes.attr$mean.edge, mean.edge)
-    nodes.attr$in.edge <- c(nodes.attr$in.edge, in.edge)
+    nodes.attr$time.asym  <- c(nodes.attr$time.asym, time.asym)
+    nodes.attr$mean.edge  <- c(nodes.attr$mean.edge, mean.edge)
+    #nodes.attr$in.edge    <- c(nodes.attr$in.edge, in.edge)
+    #nodes.attr$state      <- c(nodes.attr$state, state)
   }
   df <- as.data.frame(nodes.attr)
   return(df)
 }
 
+
 is_root <- function(tree, node){
   return(node == Ntip(tree) + 1)
 }
 
+
 is_tip <- function(tree, node){
   return(node <= Ntip(tree) & node >= 1)
 }
+
 
 get_in.edge.length <- function(tree, node){
   if (is_root(tree, node)){length <- 0.} # no incoming edge if node is root 
@@ -79,6 +84,7 @@ get_in.edge.length <- function(tree, node){
   }
   return(length)
 }
+
 
 get_mean.edge.length <- function(tree, node){
   
@@ -105,7 +111,6 @@ get_mean.edge.length <- function(tree, node){
   }
   return(mean)
 }
-
 
 
 get_clade.asym <- function(tree, node){
@@ -141,23 +146,30 @@ get_time.asym <- function(tree, node){
 }
 
 
+get_node_state <- function(tree, i){
+  if (is_tip(tree, i)){state <- tree$tip.state[[i]]} # node is tip, save state
+  else{state <- -1} # node isn't tip, state is unknown (i.e. -1)
+  return(state)
+}
+
+
 # Simulations parameters 
 n_trees  <- 10000 # number of trees 
 n_taxa   <- c(100,1000) # taxa range
 param.range <- list("lambda" = c(0.1,1.),
-                    "epsilon" = c(0.,.9), 
-                    "q"       = c(0.01,.1)) # range of each parameters 
+                    "epsilon"= c(0.,.9)) # range of each parameters 
 ss_check <- TRUE # no NAs in the summary statistics?
 
 # Preparation 
-out <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check) # load trees 
+out <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check,
+                          load_trees = TRUE) # load trees 
 trees <- out$trees # extract 
 list.df.tree <- list() # where dataframe will be stored 
 
 
 # Computing the node and edge data frame for each tree and save them to the list
-for (i in 1:n_trees){
-  progress(i, max.value = n_trees, progress.bar = TRUE, init = (i == 1))
+for (i in 9001:10000){
+  progress(i, max.value = 1000, progress.bar = TRUE, init = (i == 1))
   tree <- trees[[i]]
   df.edge <- get_edge_df(tree)
   df.node <- get_node_df(tree)
@@ -166,11 +178,9 @@ for (i in 1:n_trees){
 }
 
 # Saving 
+dir   <- "trees-dataset"
 fname <- get_backbone_save_name(n_trees, n_taxa, param.range) # save name for file 
-fname <- paste(fname, "sscheck", ss_check, "df.rds", sep = "-")
+fname <- paste(fname, "sscheck", ss_check, "df10.rds", sep = "-")
+fname <- paste(dir, fname, sep = "/")
 saveRDS(list.df.tree, fname) # saving file 
-car(paste(fname, " saved.\n"))
-
-
-tree$node.state
-tree$orig
+cat(paste(fname, " saved.\n"))

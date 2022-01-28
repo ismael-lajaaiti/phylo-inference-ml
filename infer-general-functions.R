@@ -264,6 +264,7 @@ plot_pred_vs_true_single <- function(pred, true, name, range.out, range.in,
                                      main = '', lm = TRUE, print_mse = TRUE, 
                                      print_r2 = FALSE){
   
+  #print(main)
   range.size <- range.out[2] - range.out[1]
   marge <- 0.2 * range.size
   xy.lim <- c(range.out[1] - marge, range.out[2] + marge)
@@ -276,8 +277,8 @@ plot_pred_vs_true_single <- function(pred, true, name, range.out, range.in,
   r2  <- ifelse(print_r2, round(R2_Score(pred.in, true.in),3), NA)
   sub <- create_main_plot_pred_vs_true(name, print_r2, print_mse, r2, mse)
   sub <- ""
-  lab.pred <- TeX(paste("$\\", name, "_{pred}$", sep=""))
-  lab.true <- TeX(paste("$\\", name, "_{true}$", sep=""))
+  lab.pred <- TeX(paste("$\\", name, "_{,pred}$", sep=""))
+  lab.true <- TeX(paste("$\\", name, "_{,true}$", sep=""))
   plot(true.in, pred.in, main = main, sub = sub, xlim = xy.lim, ylim = xy.lim,
        cex = .6, col = alpha("black", .7), xlab = lab.true, ylab = lab.pred)
   points(true.out, pred.out, cex = .6, col = alpha("darkorange4", .7))
@@ -301,7 +302,13 @@ plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.rang
                          "cnn_ltt" = TeX("$CNN_{LTT}$"),
                          "rnn_ltt" = TeX("$RNN_{LTT}$"),
                          "cnn_cblv" = TeX("$CNN_{CBLV}$"),
-                         "gnn_phylo" = TeX("$GNN_{Phylo}$"))
+                         "gnn_phylo" = TeX("$GNN_{Phylo}$"),
+                         "cnn-ltt" = TeX("$CNN_{LTT}$"), "dnn-ss" = TeX("$DNN_{SS}$"),
+                         "rnn-ltt" = TeX("$RNN_{LTT}$"),
+                         "cnn-cblv" = TeX("$CNN_{CBLV}$"),
+                         "cnn_cblv_notips" = TeX("$CNN_{CBLV}^{notips}$"),
+                         "cnn_cblv_disotips" = TeX("$CNN_{CBLV}^{disotips}$"),
+                         "gnn-phylo" = TeX("$GNN_{Phylo}$"))
   
   n_model <- length(pred.param)
   name.model <- names(pred.param)
@@ -311,7 +318,8 @@ plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.rang
 
   if (save){
     fname <- paste(fname, "pdf", sep=".")
-    aspect_ratio <- 1.62 * (n_model / n_param)
+    aspect_ratio <- 1
+    #aspect_ratio <- 1.62 * (n_model / n_param)
     pdf(fname, width = 10, height = 10/aspect_ratio,
         pointsize = 15/sqrt(aspect_ratio))
   }
@@ -349,14 +357,28 @@ get_theil_coefficients <- function(pred, true){
   u_bias  <- u_bias / (n*u_d)
   u_slope <- u_slope/ (n*u_d)
   u_var   <- u_var  / (n*u_d)
+  ci      <- confidence_interval(pred, true) / (n*u_d)
 
   # SSD_rec <- u_bias + u_slope + u_var
   SSD <- sum((pred-true)**2)/ (n*u_d)
   SSD_rec <- u_bias + u_slope + u_var
   
-  theil_coef <- list("SSD" = SSD, "SSD_rec" = SSD_rec, "bias" = u_bias, "slope" = u_slope, "var" = u_var)
+  theil_coef <- list("SSD" = SSD, "SSD_rec" = SSD_rec, "bias" = u_bias,
+                     "slope" = u_slope, "var" = u_var, "ci"   = ci)
   
   return(theil_coef)
+  
+}
+
+
+confidence_interval <- function(pred, true){
+  
+  n   <- length(pred)
+  ssd <- (pred - true)**2
+  sd  <- sd(ssd)
+  se  <- sd / sqrt(n)
+  ci  <- 1.96*se
+  return(ci)
   
 }
 
@@ -445,7 +467,8 @@ get_mle_predictions <- function(type, trees){
 }
 
 
-plot_error_barplot_all <- function(pred.param, true.param, param.range.in, save = FALSE, fname = NA){
+plot_error_barplot_all <- function(pred.param, true.param, param.range.in, name.param,
+                                   save = FALSE, fname = NA){
   
 
   n_param <- length(true.param) # number of parameters 
@@ -466,7 +489,7 @@ plot_error_barplot_all <- function(pred.param, true.param, param.range.in, save 
   
   # Compute the split error for all inference models and all parameters 
   for (i in 1:n_param){
-    name.param <- name.param.list[i] # name of the parameter 
+    #name.param <- name.param.list[i] # name of the parameter 
     true <- true.param[[i]] # true parameters vector
     range.in <- param.range.in[[i]] # range of the inner domain of interest 
     for (j in 1:n_model){
@@ -483,7 +506,7 @@ plot_error_barplot_all <- function(pred.param, true.param, param.range.in, save 
   
 
   for (i in 1:n_param){
-    plot_error_barplot_single(theil_coef.list[[i]], name.param.list[[i]])
+    plot_error_barplot_single(theil_coef.list[[i]], name.param[i])
   }
 
   if (save){dev.off()}
@@ -501,34 +524,53 @@ plot_error_barplot_single <- function(theil_coef_list, name.param){
                          "cnn-ltt" = TeX("$CNN_{LTT}$"), "dnn-ss" = TeX("$DNN_{SS}$"),
                          "rnn-ltt" = TeX("$RNN_{LTT}$"),
                          "cnn-cblv" = TeX("$CNN_{CBLV}$"),
+                         "cnn_cblv_notips" = TeX("$CNN_{CBLV}^{notips}$"),
+                         "cnn_cblv_disotips" = TeX("$CNN_{CBLV}^{disotips}$"),
                          "gnn-phylo" = TeX("$GNN_{Phylo}$"))
   
   df.error.decomp <- data.frame(matrix(ncol = length(theil_coef_list), nrow = 3))
   colnames(df.error.decomp) <- names(theil_coef_list)
-  rownames(df.error.decomp) <- c("Bias I", "Bias S", "Var")
+  rownames(df.error.decomp) <- c("Bias Uni.", "Bias Cons.", "Variance")
+  
+  ci_center <- c()
+  ci_width  <- c()
   
   for (model in 1:length(theil_coef_list)){
     for (error in 3:5){
       err <- theil_coef_list[[model]][[error]]
       df.error.decomp[error - 2, model] <- err
     }
+    center <- theil_coef_list[[model]][[1]]
+    width  <- theil_coef_list[[model]][[6]]
+    ci_center <- c(ci_center, center)
+    ci_width  <- c(ci_width ,width)
   }
   
   names.arg <- c()
   for (name in colnames(df.error.decomp)){
     names.arg <- c(names.arg, name.model.tex[[name]])
   } 
-  
-  legend <- c("Bias I", "Bias S", "Var")
 
-  ylab <- TeX(paste("$\\", name.param, "_{err}$", sep=""))
+  legend <- c("Bias Uni.", "Bias Cons.", "Variance")
+
+  #print(theil_coef_list)
   
-  barplot(as.matrix(df.error.decomp[legend,]), col = c("purple", "blue","darkorange"),
+  ylab <- TeX(paste("$\\", name.param, "$ error", sep=""))
+  
+  ze_barplot <- barplot(as.matrix(df.error.decomp[legend,]), col = c("black", "darkgray","white"),
           ylab = ylab, names.arg = names.arg)
   legend("topleft",                                   
          legend = legend,
-         fill = c("purple", "blue","darkorange"))
+         fill = c("black", "darkgray","white"))
   
+  #error.bar(ze_barplot, ci_center, ci_width)
+  
+}
+
+
+#A function to add arrows on the chart
+error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
+  arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)
 }
 
 
@@ -805,82 +847,101 @@ plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees, nn_
 #' 
 #' @export
 #' @examples
-generate_trees <- function(type, n_trees, n_taxa, param.range, ss_check = TRUE){
+generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   
   # Initialization
   trees      <- list() # where trees will be stored 
-  name.param <- names(param.range) # parameters names 
-  n_param    <- length(name.param) # number of parameters 
+  n_param    <- length(param.range) # number of parameters
+  print(param.range)
   true.param <- vector(mode='list', length=n_param)
-  names(true.param) <- c(name.param[1:n_param-1], "mu") # replace "epsilon" w/ "mu"
+  names(true.param) <- c("lambda", "mu") 
 
-  cat("Generation of trees...\n")
+  cat("Generation of phylogenies...\n")
   
   while (length(trees) < n_trees){
     
     # Generate the phylogenetic tree parameters 
-    vec.param <- c()
-    for (i in 1:n_param){
-      range <- param.range[[i]]
-      param <- runif(1, range[1], range[2])
-      vec.param <- c(vec.param, param)
-    }
+    vec.param <- drawRateCRBD(param.range)
     
     # Draw the number of tips of the tree
-    n_taxa.i <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
+    n_taxa.i <- drawPhyloSize(n_taxa)
     
-    # Generate tree - Constant rate birth death model 
-    if (type == "crbd"){
-      if (n_param != 2){cat("Wrong number of parameters. Expected 2 parameters for CRBD. \n")}
-      vec.param[2] <- vec.param[1]*vec.param[2] # mu = lambda*epsilon 
-      tree <- trees(c(vec.param[1], vec.param[2]), "bd", max.taxa=n_taxa.i)[[1]] 
-    }
+    # Generate tree
+    tree <- trees(c(vec.param[1], vec.param[2]), "bd", max.taxa=n_taxa.i)[[1]] 
     
-    # Generate tree - Birth death model w/ exp. decay of lambda and constant mu 
-    else if (type == "expbd"){
-      if (n_param != 4){cat("Wrong number of parameters. Expected 4 parameters for exp. BD. \n")}
-      lambda <- function(t) vec.param[1]*exp(-vec.param[2]*t) + vec.param[3]
-      vec.param[4] <- vec.param[3]*vec.param[4] # mu = lambda*epsilon
-      tree <- rphylo(birth = lambda, death = vec.param[4], n = n_taxa.i, fossils = FALSE) 
-    }
-    
-    # Checking that summary statistics have no NA
+    # Checking that Summary Statistics have no NA
     if (ss_check){
-      ss <- get_ss(tree) # compute summary statistics 
-      if (!any(is.na(ss))){
-        trees <- append(trees, list(tree)) # saving tree
-        for (i in 1:n_param){
-          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
-        }
-        progress(length(trees), n_trees, progress.bar = TRUE,
-                 init = (length(trees)==1)) # print progression
-      }
+      ss       <- get_ss(tree)    # compute summary statistics
+      no_NA_ss <- !any(is.na(ss)) # does SS have any NA values?
     }
     
-    # Directly append the new tree to the list and save  
-    else{
-      trees <- append(trees, list(tree))
-      for (i in n_param){
-        true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
-      }
-      progress(length(trees), n_trees, progress.bar = TRUE,
-               init = (length(trees)==1)) # print progression
+    # If no checking or SS without NAs
+    if (no_NA_ss || !ss_check){
+        trees <- append(trees, list(tree)) # save tree
+        for (i in 1:n_param){
+          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
+        }
+        progress(length(trees), n_trees, progress.bar = TRUE, # print
+                 init = (length(trees)==1))                   # progression
     }
   }
   
-  cat("\nGeneration of trees... Done.")
+  cat("\nGeneration of phylogenies... Done.")
   
-  # Prepare output containing: trees list, true lambda vector, true mu vector.
+  # Prepare output containing: trees (list), true param values (vector).
   out <- list("trees"    = trees, 
               "param"    = true.param)
   
   return(out)
+}
+
+
+drawRateCRBD <- function(param.range){
+  
+  n_param <- length(param.range)
+  if (n_param != 2){print("Wong number of parameters. CRBD has 2 parameters.")}
+  # Param 1 = lambda  = speciation rate 
+  # Param 2 = epsilon = turnover   rate  
+  
+  vec.param <- c()
+  for (i in 1:n_param){
+    range <- param.range[[i]]               # parameter range
+    param <- runif(1, range[1], range[2])   # draw randomly the parameter
+    vec.param <- c(vec.param, param)        # save
+  }
+  
+  # Transform epsilon into mu (extinction rate)
+  vec.param[2] <- vec.param[1]*vec.param[2] # mu = epsilon * lambda
+  
+  return(vec.param)
+}
+
+
+drawRateBiSSE <- function(param.range){
+  
+  lambda.range <- param.range[[1]]
+  q.range      <- param.range[[2]]
+  lambda0 <- runif(1, lambda.range[1], lambda.range[2])
+  lambda1 <- 2*lambda0
+  mu0     <- 0.
+  mu1     <- 0.
+  q01     <- runif(1, q.range[1], q.range[2])
+  q10     <- q01
+  vec.param <- c(lambda0, lambda1, mu0, mu1, q01, q10)
+  return(vec.param)
   
 }
 
 
+drawPhyloSize <- function(n_taxa){
+  size <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
+  return(size)
+}
 
-generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
+
+
+
+generatePhyloBiSSE <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   
   trees <- list()
   name.param <- c("lambda0", "lambda1", "mu0", "mu1", "q01", "q10") 
@@ -888,20 +949,12 @@ generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   names(true.param) <- name.param
   
   while(length(trees) < n_trees){
-    lambda.range <- param.range[[1]]
-    q.range <- param.range[[2]]
-    lambda0 <- runif(1, lambda.range[1], lambda.range[2])
-    lambda1 <- 2*lambda0
-    mu0     <- 0.
-    mu1     <- 0.
-    q01     <- runif(1, q.range[1], q.range[2])
-    q10     <- q01
-    vec.param <- c(lambda0, lambda1, mu0, mu1, q01, q10)
-    n_taxa.i <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
+    vec.param <- drawRateBiSSE(param.range) # draw randomly param. values
+    n_taxa.i <- drawPhyloSize(n_taxa)       # draw phylogeny size 
     
+    # Generate phylogeny 
     tree <- NULL
-    lik <- NULL
-    
+    lik  <- NULL
     while(is.null(tree) | is.null(lik)){
       tree <- tree.bisse(vec.param, max.taxa = n_taxa.i, x0 = NA)
       if (!(all(tree$tip.state == 0) | all(tree$tip.state == 1))){
@@ -911,27 +964,19 @@ generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
     
     # Checking that summary statistics have no NA
     if (ss_check){
-      ss <- get_ss(tree) # compute summary statistics 
-      if (!any(is.na(ss))){
-        trees <- append(trees, list(tree)) # saving tree
-        for (i in 1:6){
-          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
-        }
-        progress(length(trees), n_trees, progress.bar = TRUE,
-                 init = (length(trees)==1)) # print progression
-      }
+      ss <- get_ss(tree) # compute summary statistics
+      no_NA_ss <- !any(is.na(ss)) # does SS have any NA values?
     }
     
-    # Directly append the new tree to the list and save  
-    else{
-      trees <- append(trees, list(tree))
-      for (i in n_param){
-        true.param[[i]] <- c(true.param[[i]], vec.param[i]) # saving parameters
+    if (no_NA_ss || !ss_check){
+        trees <- append(trees, list(tree))                    # save tree
+        for (i in 1:6){
+          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
+        }
+        progress(length(trees), n_trees, progress.bar = TRUE, # print
+                 init = (length(trees)==1))                   # progression
       }
-      progress(length(trees), n_trees, progress.bar = TRUE,
-               init = (length(trees)==1)) # print progression
     }
-  }
   
   out <- list("trees"    = trees, 
               "param"    = true.param)
@@ -940,54 +985,14 @@ generate_trees_bisse <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
 }
 
 
-#' Compute the adjacency matrix of a phylo tree 
-#'
-#'
-#' @param tree phylo tree
-#'              
-#' @return adjacency matrix
-#' 
-#' @export
-#' @examples
-get_adjacency <- function(tree, size, to_tensor = TRUE){
-  adj   <- matrix(0, nrow = size, ncol = size) # empty adjacency matrix 
-  edge.mat    <- tree$edge # matrices of edge indices 
-  edge.length <- tree$edge.length # vector of edge lengths
-  n_edge <- length(edge.length) # number of edges
-  for (i in 1:n_edge){
-    u <- edge.mat[i,1] # 1st node
-    v <- edge.mat[i,2] # 2nd node 
-    adj[u, v] <- edge.length[i] # write edge in the adjacency matrix
-    adj[v, u] <- edge.length[i] # symmetric
-  }
-  if (to_tensor){adj <- torch_tensor(adj)}
-  return(adj)
-}
+generatePhylo <- function(model, n_trees, n_taxa, param.range, ss_check = TRUE){
+  
+  if (model == "crbd"){
+    out <- generatePhyloCRBD(n_trees, n_taxa, param.range, ss_check)
+  } else if (model == "bisse"){
+    out <- generatePhyloBiSSE(n_trees, n_taxa, param.range, ss_check)
+  } else {print("Model unkown, model should either crbd or bisse.")}
 
-
-#' Compute the adjacency matrix of a list of phylo trees
-#'
-#'
-#' @param trees list of phylo trees
-#'              
-#' @return corresponding list of adjacency matrices
-#' 
-#' @export
-#' @examples
-generate_adjacency_matrices <- function(trees, n_taxa){
-  size     <- 2*max(n_taxa) - 1 # max. total number of nodes of a tree 
-  list.adj <- list() # to store adjacency matrices 
-  n_trees  <- length(trees) # number of phylo trees 
-  cat("Computing adjacency matrices...\n")
-  for (n in 1:n_trees){
-    progress(value = n, max.value = n_trees, progress.bar = TRUE, 
-             init = (n == 1)) # print progress
-    tree <- trees[[n]] # extract tree
-    adj  <- get_adjacency(tree, size) # get its adjacency matrix 
-    list.adj[[n]] <- adj # save it 
-  }
-  cat("\nComputing adjacency matrices... Done.")
-  return(list.adj)
 }
 
 
@@ -1053,12 +1058,12 @@ generate_ltt_dataframe <- function(trees, n_taxa, true.param){
 #' 
 #' @export
 #' @examples
-convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates, nn_type){
+convert_ltt_dataframe_to_dataset <- function(df.ltt, true.param, nn_type){
   
   if (nn_type == "cnn-ltt"){
     ds.ltt <- torch::dataset(
       name <- "ltt_dataset", 
-      initialize = function(df.ltt, df.rates){
+      initialize = function(df.ltt, true.param){
         
         # input
         df.ltt[is.na(df.ltt)] <- 0
@@ -1069,9 +1074,7 @@ convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates, nn_type){
         self$x <- array.ltt
         
         # target 
-        y <- df.rates %>% 
-          as.matrix()
-        self$y <- torch_tensor(y)
+        self$y <- torch_tensor(do.call(cbind, true.param)) # target
       }, 
       
       .getitem = function(i) {list(x = self$x[,i]$unsqueeze(1), y = self$y[i, ])},
@@ -1083,7 +1086,7 @@ convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates, nn_type){
   else{
     ds.ltt <- torch::dataset(
       name <- "ltt_dataset", 
-      initialize = function(df.ltt, df.rates){
+      initialize = function(df.ltt, true.param){
         
         # input
         df.ltt[is.na(df.ltt)] <- 0
@@ -1094,9 +1097,7 @@ convert_ltt_dataframe_to_dataset <- function(df.ltt, df.rates, nn_type){
         self$x <- array.ltt
         
         # target 
-        y <- df.rates %>% 
-          as.matrix()
-        self$y <- torch_tensor(y)
+        self$y <- torch_tensor(do.call(cbind, true.param)) # target
       }, 
       
       .getitem = function(i) {list(x = self$x[,i], y = self$y[i, ])},
@@ -1218,10 +1219,16 @@ get_dataset_save_name <- function(n_trees, n_taxa, param.range, ss_check){
   fname.trees  <- paste(dir, fname, "-trees.rds", sep="")
   fname.param  <- paste(dir, fname, "-param.rds", sep="")
   fname.ss     <- paste(dir, fname, "-ss.rds", sep="")
+  fname.mle    <- paste(dir, fname, "-mle.rds", sep="")
+  fname.encode <- paste(dir, fname, "-encode.rds", sep="")
+  fname.ltt    <- paste(dir, fname, "-ltt.rds", sep="")
   
   fnames <- list("trees"  = fname.trees, 
                  "param"  = fname.param, 
-                 "ss"     = fname.ss)
+                 "ss"     = fname.ss, 
+                 "mle"    = fname.mle, 
+                 "encode" = fname.encode, 
+                 "ltt"    = fname.ltt)
   
   return(fnames)
   
@@ -1284,7 +1291,7 @@ save_dataset_trees <- function(trees, true.param, n_trees, n_taxa,
 #' 
 #' @export
 #' @examples
-load_dataset_trees <- function(n_trees, n_taxa, param.range, ss_check){
+load_dataset_trees <- function(n_trees, n_taxa, param.range, ss_check, load_trees){
   
   # Getting file names to load 
   fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)
@@ -1293,13 +1300,16 @@ load_dataset_trees <- function(n_trees, n_taxa, param.range, ss_check){
 
   # Loading data 
   cat("Loading data...\n")
-  trees <- readRDS(fname.trees)
-  cat(paste(fname.trees, " loaded.\n", sep=""))
+  if (load_trees){
+    trees <- readRDS(fname.trees)
+    cat(paste(fname.trees, " loaded.\n", sep=""))}
+  print(fname.param)
   param <- readRDS(fname.param)
   cat(paste(fname.param, " loaded.\n", sep=""))
   cat("Loading data... Done.\n")
   
-  out <- list("trees" = trees, "param" = param)
+  out <- list("param" = param)
+  if (load_trees){out$trees <- trees}
   
   return(out)
   
@@ -1467,8 +1477,147 @@ df_add_tipstate <- function(df, trees){
   return(df)
 }
 
+extract_elements <- function(list_of_vectors, indices_to_extract){
+  l <- as.list(do.call(cbind, list_of_vectors)[indices_to_extract,] 
+               %>% as.data.frame())
+  return(l)
+}
+
 
 #### end #### 
+
+
+#### RNN custom batch ####
+
+
+find_indices_same_size <- function(df.ltt, n_taxa){
+  list.indices <- list()
+  for (n in n_taxa[1]:n_taxa[2]){
+    list.indices[[as.character(n)]] <- c()
+  }
+  for(i in 1:ncol(df.ltt)){
+    n <- nrow(na.omit(df.ltt[i]))
+    list.indices[[as.character(n)]] <- c(list.indices[[as.character(n)]], i)
+  }
+  return(list.indices)
+}
+
+
+create_one_batch <- function(df.ltt, true.param, indices){
+  
+  batch <- list("x" = NA, "y" = NA)
+  
+  inputs <- na.omit(df.ltt[indices]) %>%
+    as.matrix() %>% t() %>%
+    torch_tensor()
+  
+  df.param <- true.param %>% as.data.frame()
+  
+  targets <- df.param[indices,] %>%
+    as.matrix %>%
+    torch_tensor()
+  
+  batch$x <- inputs
+  batch$y <- targets
+  
+  return(batch)
+  
+}
+
+
+create_all_batch <- function(df.ltt, true.param, list.indices, n_taxa){
+  
+  list.batch <- list()
+  #n_iter <- sample(n_taxa[1]:n_taxa[2], length(n_taxa[1]:n_taxa[2]))
+  n_tot <- length(list.indices)
+  for (n in 1:n_tot){
+    indices <- list.indices[[n]]
+    batch <- create_one_batch(df.ltt, true.param, indices)
+    if (dim(batch$x)[1] != 0){
+      list.batch[[n]] <- batch
+    }
+  }
+  return(list.batch)
+}
+
+
+reformat_set <- function(set, max_batch_size){
+  
+  new_set <- list()
+  n_batch <- length(set)
+  
+  for (i in 1:n_batch){
+    batch <- set[[i]]
+    batch_size <- dim(batch$y)[1]
+    n_new_batch <- (batch_size - 1) %/% (max_batch_size) + 1
+    for (j in 1:n_new_batch){
+      new_batch   <- list()
+      start       <- 1 + (j-1)*max_batch_size
+      end         <- min(c(batch_size,j*max_batch_size))
+      new_batch$x <- batch$x[start:end,]
+      new_batch$y <- batch$y[start:end,]
+      new_set[[length(new_set)+1]] <- new_batch
+    }
+  }
+  
+  return(new_set)
+  
+}
+
+
+
+reformat_test_batch <- function(test.batch){
+  
+  new.test.batch <- list()
+  n_test_batch <- length(test.batch)
+  
+  for (i in 1:n_test_batch){
+    batch <- test.batch[[i]]
+    n <- dim(batch$x)[1]
+    for (j in 1:n){
+      mini.batch <- list("x" = NA, "y" = NA)
+      input  <- batch$x[j,]
+      target <- batch$y[j,]
+      mini.batch$x <- input
+      mini.batch$y <- target 
+      new.test.batch[[length(new.test.batch) + 1]] <- mini.batch
+    }
+  }
+  
+  return(new.test.batch)
+}
+
+recover_indices <- function(list.indices){
+  n <- length(list.indices)
+  recover.ind <- c()
+  for (i in 1:n){
+    ind <- list.indices[[i]]
+    recover.ind <- c(recover.ind, ind)
+  }
+  
+  return(recover.ind)
+}
+
+
+convert_pred_GNN <- function(pred_GNN_from_py){
+  
+  n <- length(pred_GNN_from_py)
+  pred_GNN <- list()
+  
+  for (i in 1:n){
+    pred <- c()
+    m <- length(pred_GNN_from_py[[i]])
+    for (j in 1:m){
+      pred <- c(pred, pred_GNN_from_py[[i]][[j]])
+    }
+    pred_GNN[[i]] <- pred
+  }
+  
+  return(pred_GNN)
+  
+}
+
+#### end ####
 
 
 
