@@ -13,7 +13,7 @@ source("infer-general-functions.R")
 
 
 model       <- "crbd"      # type of the model, either: "crbd" or "bisse"
-n_trees     <- 100000      # number of trees to generate
+n_trees     <- 10009      # number of trees to generate
 n_taxa      <- c(100,1000) # range size of the generated phylogenies
 compute_mle <- TRUE        # should mle predictions be computed and saved 
 
@@ -44,19 +44,18 @@ param.range <- param.range.list[[model]]
 
 # Generating and saving phylogenies
 out <- generatePhylo(model, n_trees, n_taxa, param.range)
-save_dataset_trees(out$trees, out$param, n_trees, n_taxa, param.range) # save
+savePhylogeny(out$trees, out$param, n_trees, n_taxa, param.range) # save
 
 
 # Computing summary statistics 
-df.ss <- generate_ss_dataframe_from_trees(out$trees, out$param)      # compute
-save_dataset_summary_statistics(df.ss, n_trees, n_taxa, param.range) # save
+df.ss <- generateSumStatFromPhylo(out$trees, out$param)      # compute
+saveSummaryStatistics(df.ss, n_trees, n_taxa, param.range) # save
 
 
 # Computing Maximum Likelihood Rate Estimations
 if (compute_mle){
-  pred.param <- get_mle_predictions(model, out$trees)
-  fname.mle  <- get_mle_preds_save_name(n_trees, n_taxa, param.range)
-  saveRDS(pred.param, fname.mle)
+  pred.param <- getPredsMLE(model, out$trees)
+  savePredsMLE(pred.param, n_trees, n_taxa, param.range)
 }
 
 #### end ####

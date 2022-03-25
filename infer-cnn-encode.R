@@ -17,27 +17,38 @@ ss_check <- TRUE
 device <- "cuda:1" # GPU where to run computations 
 nn_type <- "cnn-encode" # type of the model: Convolutional Neural Network w/
                         # graph encoding 
+model_type <- "bisse"
 
 n_trees <- 100000 # total number of trees (train + valid + test)
 n_taxa  <- c(100, 1000) # size of the trees
-param.range <- list("lambda"  = c(0.1,1.),
-                    "q" = c(0.01,0.1)) # parameters range 
+
+# Parameter range of Constant Rate Birth Death model 
+param.range.crbd <- list("lambda"  = c(0.1,1.),  # speciation rate
+                         "epsilon" = c(0.,0.9))  # extinction rate 
+
+# Parameter range of BiSSE model 
+param.range.bisse <- list("lambda"  = c(0.1,1.),  # speciation rate
+                          "q"       = c(.01,.1))  # transition rate 0 <-> 1
+
+param.range.list <- list("crbd"  = param.range.crbd,
+                         "bisse" = param.range.bisse)
+param.range <- param.range.list[[model_type]]
 
 # Generate the trees and save 
-out        <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = TRUE, 
-                                 load_trees = FALSE)
+out        <- readPhylogeny(n_trees, n_taxa, param.range, load_trees = TRUE)
 true.param <- out$param # extract true values of the parameters 
-true.param <- true.param[-c(2,3,4,6)]
+trees      <- out$trees
+if (model_type == "bisse"){true.param <- true.param[-c(2,3,4,6)]}
 
 
 
 # Create the corresponding encoding of the trees
-#tensor.encode <- generate_encoding(trees, n_taxa)
-fname.encode <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)$encode
+# mat.encode <- generate_encoding(trees, n_taxa)
+fname.encode <- getSaveName(n_trees, n_taxa, param.range)$encode
 mat.encode <- readRDS(fname.encode)
 
 mat.encode.rd <- mat.encode 
-mat.encode.rd <- randomize_tips(mat.encode.rd, trees)
+mat.encode.rd <- randomize_tips(mat.encode, trees)
 
 randomize_tips <- function(mat.encode.rd, trees){
   for (i in 1:n_trees){
@@ -67,10 +78,10 @@ relabel_tips <- function(mat, trees){
   return(mat)
 } 
 
-mat.encode.new <- relabel_tips(mat.encode, trees)
+mat.encode <- relabel_tips(mat.encode, trees)
 
 
-ds.encode     <- convert_encode_to_dataset(mat.encode.rd, true.param)
+ds.encode     <- convert_encode_to_dataset(mat.encode, true.param)
 
 # Parameters of the NN's training
 n_train    <- 90000
@@ -86,17 +97,12 @@ not_train_indices <- setdiff(1:n_trees, train_indices)
 valid_indices     <- sample(not_train_indices, n_valid)
 test_indices      <- setdiff(not_train_indices, valid_indices)
 
-extract_elements <- function(list_of_vectors, indices_to_extract){
-  l <- as.list(do.call(cbind, list_of_vectors)[indices_to_extract,] 
-               %>% as.data.frame())
-  return(l)
-}
-
-train_ds <- ds.encode(mat.encode.rd[, train_indices],
+# Creation of datasets
+train_ds <- ds.encode(mat.encode[1:2000, train_indices],
                    extract_elements(true.param, train_indices))
-valid_ds <- ds.encode(mat.encode.rd[, valid_indices],
+valid_ds <- ds.encode(mat.encode[1:2000, valid_indices],
                    extract_elements(true.param, valid_indices))
-test_ds  <- ds.encode(mat.encode.rd[, test_indices],
+test_ds  <- ds.encode(mat.encode[1:2000, test_indices],
                       extract_elements(true.param, test_indices))
 
 
@@ -106,10 +112,10 @@ valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
 test_dl  <- test_ds  %>% dataloader(batch_size=1,          shuffle=FALSE)
 
 
-n_hidden <- 10
+n_hidden <- 8
 n_layer  <- 4
 ker_size <- 10
-n_input  <- 3*max(n_taxa)
+n_input  <- 2*max(n_taxa)
 n_out    <- length(param.range)
 p_dropout <- 0.01
 
@@ -264,22 +270,27 @@ name.param <- c("lambda", "q")
 
 # Plot Predictions 
 true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])
-fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
+fname.mle <- getSaveName(n_trees, n_taxa, param.range)$mle
 mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
-mle.pred.test <- mle.pred.test[-c(2,3,4,6)]
+if (model_type == "bisse"){mle.pred.test <- mle.pred.test[-c(2,3,4,6)]}
 pred.param.test <- list("mle" = mle.pred.test)
-pred.param.test[["cnn_cblv_disotips"]] <- nn.pred
-param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
-param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(.02,.09))
-
+pred.param.test[["cnn_cblv_notips"]] <- nn.pred
+if (model_type == "bisse"){
+  param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
+  param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(.02,.09))
+} else{
+  param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,1.))
+  param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(0.,.8))
+}
 
 plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
-                      param.range.in, fname = "plot_cnnCBLV_tipsornottips_cnnLTT_vs_MLE", 
-                      save = TRUE)
+                      param.range.in, fname = "", 
+                      save = FALSE)
 
-plot_error_barplot_all(pred.param.test[reorder_names], true.param.test, param.range.in, 
-                       save = TRUE, fname = "error_cnnCBLV_tipsornottips_cnnLTT_vs_MLE")
+reord_names <- c("mle","cnn_cblv", "dnn-ss", "cnn-ltt", "rnn-ltt", "gnn-phylo")
+plot_error_barplot_all(pred.param.test, true.param.test, param.range.in, name.param,
+                       save = FALSE, fname = "")
 
 #plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa, 
 #                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)

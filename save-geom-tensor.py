@@ -17,8 +17,8 @@ import random as rd
 
 pandas2ri.activate()
 
-fname_graph = "trees-dataset/ntrees-10009-ntaxa-100-1000-lambda-0.1-1-q-0.01-0.1-sscheck-TRUE-df.rds"
-fname_param = "trees-dataset/ntrees-10009-ntaxa-100-1000-lambda-0.1-1-q-0.01-0.1-sscheck-TRUE-param.rds"
+fname_graph = "trees-dataset/ntrees-10009-ntaxa-100-1000-lambda-0.1-1-epsilon-0-0.9-sscheck-TRUE-df.rds"
+fname_param = "trees-dataset/ntrees-10009-ntaxa-100-1000-lambda-0.1-1-epsilon-0-0.9-sscheck-TRUE-param.rds"
 
 readRDS = robjects.r['readRDS']
 df_graph = readRDS(fname_graph)

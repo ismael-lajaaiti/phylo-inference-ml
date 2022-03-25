@@ -154,22 +154,21 @@ get_node_state <- function(tree, i){
 
 
 # Simulations parameters 
-n_trees  <- 10000 # number of trees 
+n_trees  <- 10009 # number of trees 
 n_taxa   <- c(100,1000) # taxa range
 param.range <- list("lambda" = c(0.1,1.),
                     "epsilon"= c(0.,.9)) # range of each parameters 
 ss_check <- TRUE # no NAs in the summary statistics?
 
 # Preparation 
-out <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check,
-                          load_trees = TRUE) # load trees 
+out <- readPhylogeny(n_trees, n_taxa, param.range) # load trees 
 trees <- out$trees # extract 
 list.df.tree <- list() # where dataframe will be stored 
 
 
 # Computing the node and edge data frame for each tree and save them to the list
-for (i in 9001:10000){
-  progress(i, max.value = 1000, progress.bar = TRUE, init = (i == 1))
+for (i in 1:n_trees){
+  progress(i, max.value = n_trees, progress.bar = TRUE, init = (i == 1))
   tree <- trees[[i]]
   df.edge <- get_edge_df(tree)
   df.node <- get_node_df(tree)
@@ -180,7 +179,7 @@ for (i in 9001:10000){
 # Saving 
 dir   <- "trees-dataset"
 fname <- get_backbone_save_name(n_trees, n_taxa, param.range) # save name for file 
-fname <- paste(fname, "sscheck", ss_check, "df10.rds", sep = "-")
+fname <- paste(fname, "sscheck", ss_check, "df.rds", sep = "-")
 fname <- paste(dir, fname, sep = "/")
 saveRDS(list.df.tree, fname) # saving file 
 cat(paste(fname, " saved.\n"))

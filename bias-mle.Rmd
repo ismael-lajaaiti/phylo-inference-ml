@@ -1,0 +1,253 @@
+---
+title: "Investigate MLE bias for the CRBD model"
+output:
+  pdf_document: default
+  html_document: default
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(dev = 'pdf')
+```
+
+
+The Constant Rate Birth Death (or CRBD) model has two constant parameters: 
+
+* $\lambda \in [0,1]$ the speciation rate
+* $\mu \in [0,0.9]$ the extinction rate
+
+Load data 
+
+```{r}
+set.seed(113)
+
+params.crbd <- readRDS("params-testset-crbd.rds") # read data file 
+params.true <- params.crbd$true                   # true parameter values  
+params.mle  <- params.crbd$pred$mle               # predicted values by MLE
+```
+
+Plot true vs. predicted values by Maximum Likelihood Estimations (MLE)
+
+```{r fig.width = 8, fig.height = 4}
+
+par(mfrow = c(1,2)) # 1 row, 2 columns
+
+# Scatter plot - Lambda
+plot(params.true$lambda, params.mle$lambda, xlab = "true", ylab = "pred",
+     main = "lambda", cex = .5)                          # scatter plot 
+lm.lambda <- lm(params.mle$lambda ~ params.true$lambda)  # fit lm
+abline(lm.lambda, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 1     , col = "red"  , lty = 1, lw = 2)        # plot 1:1 line
+legend("topleft", legend = c("1:1", "lm"), lty = c(1,2), # add legend
+       col = c("red", "green"), lw = 2)
+
+# Scatter plot - Mu
+plot(params.true$mu    , params.mle$mu,     xlab = "pred", ylab = "pred", 
+     main = "mu", cex = .5)
+lm.mu <- lm(params.mle$mu ~ params.true$mu)
+abline(lm.mu, col = "green", lty = 2, lw = 2)
+abline(0, 1 , col = "red"  , lty = 1, lw = 2)
+```
+
+Visualize bias: plot pred - true vs. true 
+
+```{r fig.width = 8, fig.height = 4}
+par(mfrow = c(1,2)) # 1 row, 2 columns
+
+# Scatter plot - Lambda
+plot(params.true$lambda, params.mle$lambda - params.true$lambda, 
+     xlab = "true", ylab = "pred - true",
+     main = "lambda", cex = .5)                          # scatter plot 
+lm.lambda <- lm(params.mle$lambda - params.true$lambda 
+                ~ params.true$lambda)                    # fit lm
+abline(lm.lambda, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0     , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+legend("topleft", legend = c("y=0", "lm"), lty = c(1,2), # add legend
+       col = c("red", "green"), lw = 2)
+
+# Scatter plot - Mu
+plot(params.true$mu, params.mle$mu - params.true$mu, 
+     xlab = "true", ylab = "pred - true",
+     main = "mu", cex = .5)                          # scatter plot 
+lm.mu <- lm(params.mle$mu - params.true$mu 
+                ~ params.true$mu)                    # fit lm
+abline(lm.mu, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0 , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+```
+
+
+```{r}
+summary(lm.lambda) 
+summary(lm.mu)
+```
+
+
+We note a significant bias for both parameters.
+
+Moreover observe an asymmetry in the scatter plot of $\mu$ because MLE doesn't
+predict negative values. Let's check if the bias comes from this asymmetry by
+considering only the points such that $\mu \geq 0.3$.
+
+```{r fig.width = 8, fig.height = 4}
+par(mfrow = c(1,2)) # 1 row, 2 columns
+
+ind <- params.true$mu > .3
+
+# Scatter plot - Lambda
+plot(params.true$lambda[ind], params.mle$lambda[ind] - params.true$lambda[ind], 
+     xlab = "true", ylab = "pred - true",
+     main = "lambda", cex = .5)                          # scatter plot 
+lm.lambda <- lm(params.mle$lambda[ind] - params.true$lambda[ind] 
+                ~ params.true$lambda[ind])                    # fit lm
+abline(lm.lambda, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0     , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+legend("topleft", legend = c("y=0", "lm"), lty = c(1,2), # add legend
+       col = c("red", "green"), lw = 2)
+
+# Scatter plot - Mu
+plot(params.true$mu[ind], params.mle$mu[ind] - params.true$mu[ind], 
+     xlab = "true", ylab = "pred - true",
+     main = "mu", cex = .5)                          # scatter plot 
+lm.mu <- lm(params.mle$mu[ind] - params.true$mu[ind] 
+                ~ params.true$mu[ind])                    # fit lm
+abline(lm.mu, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0 , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+```
+
+The bias doesn't come from the asymmetry for $\mu \simeq 0^+$. 
+
+An other possibility is that the bias comes from the non-uniform distribution of 
+$\mu$:
+```{r, fig.width = 8, fig.height = 3}
+par(mfrow = c(1,3))
+hist(params.true$lambda, main = "", xlab = "lambda")
+hist(params.true$mu    , main = "", xlab = "mu")
+plot(params.true$lambda, params.true$mu, xlab = "lambda", ylab = "mu", cex = .2,
+     main = "Parameter space")
+abline(0, .9, lty = 1, lw = 3, col = "red")
+legend("topleft", legend = "y = 0.9x", lty = 1, col = "red", lw = 3)
+```
+
+
+Let's check that by re-sampling uniformly $\mu$
+
+```{r fig.width = 8, fig.height = 4}
+
+# Re-sampling parameter space s.t. lambda and mu have a uniform distribution
+resamplingMu <- function(true.mu, true.lambda, nbin,
+                         mu.min     = 0., mu.max     = .5,
+                         lambda.min = .1, lambda.max = 1.){
+  
+  bin.border.mu     <- seq(mu.min    , mu.max    , length.out = nbin + 1)
+  bin.border.lambda <- seq(lambda.min, lambda.max, length.out = nbin + 1)
+  n.per.bin  <- length(true.mu)
+  ind.all    <- vector(mode = "list", length = nbin)
+  
+  for (i in 1:nbin){
+    ind.bin.mu     <- true.mu > bin.border.mu[i] & true.mu < bin.border.mu[i + 1]
+    ind.bin.lambda <- true.lambda > bin.border.lambda[i] &
+                      true.lambda < bin.border.lambda[i + 1]
+    ind.bin        <- ind.bin.mu & ind.bin.lambda
+    ind.bin        <- which(ind.bin == TRUE)
+    ind.all[[i]]   <- ind.bin
+    n.per.bin      <- min(c(n.per.bin, length(ind.bin)))
+  }
+  
+  ind.samp <- c()
+  for (i in 1:nbin){ind.samp <- c(ind.samp, sample(ind.all[[i]], n.per.bin))}
+  
+  return(ind.samp)
+}
+
+
+# Plotting histograms of the re-sampled parameter space 
+# to check if lambda and mu are now uniformly distributed
+
+par(mfrow = c(1,2))
+
+ind.resample <- resamplingMu(params.true$mu, params.true$lambda , 5)
+hist(params.true$lambda[ind.resample], xlab = "lambda (re-sampled)", main = "")
+hist(params.true$mu[ind.resample]    , xlab = "mu (re-sampled)"    , main = "")
+```
+
+Now that we have uniformly distributed values for both parameters, we can 
+check if the bias is still here:
+
+```{r fig.width = 8, fig.height = 4}
+par(mfrow = c(1,2)) # 1 row, 2 columns
+
+ind <- ind.resample
+
+# Scatter plot - Lambda
+plot(params.true$lambda[ind], params.mle$lambda[ind] - params.true$lambda[ind], 
+     xlab = "true", ylab = "pred - true",
+     main = "lambda", cex = .5)                          # scatter plot 
+lm.lambda <- lm(params.mle$lambda[ind] - params.true$lambda[ind] 
+                ~ params.true$lambda[ind])                    # fit lm
+abline(lm.lambda, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0     , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+legend("topleft", legend = c("y=0", "lm"), lty = c(1,2), # add legend
+       col = c("red", "green"), lw = 2)
+
+# Scatter plot - Mu
+plot(params.true$mu[ind], params.mle$mu[ind] - params.true$mu[ind], 
+     xlab = "true", ylab = "pred - true",
+     main = "mu", cex = .5)                          # scatter plot 
+lm.mu <- lm(params.mle$mu[ind] - params.true$mu[ind] 
+                ~ params.true$mu[ind])                    # fit lm
+abline(lm.mu, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0 , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+```
+
+The bias seems to disappear. Thus that latter could result from the 
+non-uniform distribution of $\mu$. But further investigations need to be done 
+to confirm this.
+
+```{r}
+summary(lm.lambda)
+```
+
+```{r}
+summary(lm.mu)
+```
+
+## Investigating the turnover rate 
+
+```{r}
+par(mfrow = c(1,2))
+
+n = length(params.true$lambda)
+turnover = params.true$mu / params.true$lambda 
+diversification.true = params.true$mu / params.true$lambda 
+diversification.mle = params.mle$mu / params.mle$lambda  
+treshold = .5
+ind = diversification.true < treshold
+
+
+plot(diversification.true[ind], diversification.mle[ind] - diversification.true[ind], 
+     xlab = "true", ylab = "pred - true",
+     main = "lambda", cex = .5)                          # scatter plot 
+lm.lambda <- lm(diversification.mle[ind] - diversification.true[ind] 
+                ~ diversification.true[ind])                    # fit lm
+abline(lm.lambda, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0     , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+legend("topleft", legend = c("y=0", "lm"), lty = c(1,2), # add legend
+       col = c("red", "green"), lw = 2)
+
+# Scatter plot - Mu
+plot(params.true$mu[ind], params.mle$mu[ind] - params.true$mu[ind], 
+     xlab = "true", ylab = "pred - true",
+     main = "mu", cex = .5)                          # scatter plot 
+lm.mu <- lm(params.mle$mu[ind] - params.true$mu[ind] 
+                ~ params.true$mu[ind])                    # fit lm
+abline(lm.mu, col = "green", lty = 2, lw = 2)        # plot lm
+abline(0, 0 , col = "red"  , lty = 1, lw = 2)        # plot y=0 line
+
+```
+
+
+
+
+

@@ -11,7 +11,7 @@ nn_type <- "dnn-ss" # type of the model: Deep Neural Network w/ Summary Statisti
 model_type <- "crbd" # type of diversification model 
 
 # Parameters of phylogenetic trees
-n_trees <- 10000 # total number of trees (train + valid + test)
+n_trees <- 100000 # total number of trees (train + valid + test)
 n_taxa  <- c(100,1000) # size of the trees
 
 # Parameter range of Constant Rate Birth Death model 
@@ -41,8 +41,8 @@ name.param <- names(true.param)
 n_param    <- length(name.param)
 
 # Create the corresponding summary statistics data.frame
-df <- load_dataset_summary_statistics(n_trees, n_taxa, param.range)
-df <- df_add_tipstate(df, trees)
+df <- readSummaryStatistics(n_trees, n_taxa, param.range)
+if (model_type == "bisse"){df <- df_add_tipstate(df, trees)}
 df <- scale_summary_statistics(df, n_taxa, c("lambda", "mu"))
 
 # Parameters of the NN's training
@@ -68,11 +68,11 @@ test_dl  <- test_ds  %>% dataloader(batch_size=1, shuffle=FALSE)
 
 # DNN parameters 
 n_in      <- length(train_ds[1]$x) # number of neurons of the input layer 
-n_out     <- n_param
+n_out     <- length(name.param)
 n_hidden  <- 100 # number of neurons in the hidden layers 
 p_dropout <- 0.01 # dropout probability 
 n_epochs  <- 100 # maximum number of epochs for the training 
-patience  <- 5 # patience of the early stopping 
+patience  <- 4 # patience of the early stopping 
 
 # Build the DNN 
 dnn.net <- nn_module(
@@ -233,36 +233,28 @@ if (save_preds){
 # Prepare plot 
 name.param.plot <- c("lambda", "mu")
 
-# Plot Predictions 
+# Prepare plot 
 true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])
-fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
+fname.mle <- getSaveName(n_trees, n_taxa, param.range)$mle
 mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
-mle.pred.test <- mle.pred.test[-c(2,3,4,6)]
-
-mle.pred.test <- get_mle_predictions("crbd", trees.test)
-
+if (model_type == "bisse"){mle.pred.test <- mle.pred.test[-c(2,3,4,6)]}
 pred.param.test <- list("mle" = mle.pred.test)
-pred.param.test[[nn_type]] <- nn.pred
-
-
-param.range.ajusted <- list("lambda" = c(0.,1.), "mu" = c(0.,1.))
-param.range.in <- list("lambda" = c(0.2,.9), "mu" = c(0.,.7))
-
-
-param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
-
+pred.param.test[["dnn-ss"]] <- nn.pred
+if (model_type == "bisse"){
+  param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
+  param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(.02,.09))
+} else{
+  param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,1.))
+  param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(0.,.8))
+}
 
 plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
-                      param.range.in, fname = "pred_true_dnnSS_vs_MLE", 
+                      param.range.in, fname = "", 
                       save = FALSE)
 
+#reord_names <- c("mle","cnn_cblv", "dnn-ss", "cnn-ltt", "rnn-ltt", "gnn-phylo")
 plot_error_barplot_all(pred.param.test, true.param.test, param.range.in, name.param,
-                       save = FALSE, fname = "error_dnnSS_vs_MLE")
+                       save = FALSE, fname = "")
 
 
-
-trees.test <- list()
-for (ind in test_indices){
-  trees.test <- append(trees.test, trees[ind])
-  }

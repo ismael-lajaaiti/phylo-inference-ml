@@ -342,7 +342,7 @@ plot_pred_vs_true_all <- function(pred.param, true.param, name.param, param.rang
 }
 
 
-get_theil_coefficients <- function(pred, true){
+getTheilCoefs <- function(pred, true){
   
   n <- length(pred)
   fit <- lm(pred ~ true)
@@ -350,14 +350,14 @@ get_theil_coefficients <- function(pred, true){
   a <- coef(fit)[[1]]
   pred.lm <- a + b1*true
   
-  u_d     <- sum(true**2)
+  u_d     <- mean(true**2)
   u_bias  <- n*mean((pred-true))**2
   u_slope <- (b1-1)**2 * sum((true - mean(true))**2)
   u_var   <- sum((pred - pred.lm)**2)
   u_bias  <- u_bias / (n*u_d)
   u_slope <- u_slope/ (n*u_d)
   u_var   <- u_var  / (n*u_d)
-  ci      <- confidence_interval(pred, true) / (n*u_d)
+  ci      <- confidenceInterval(pred, true) / (u_d)
 
   # SSD_rec <- u_bias + u_slope + u_var
   SSD <- sum((pred-true)**2)/ (n*u_d)
@@ -367,11 +367,12 @@ get_theil_coefficients <- function(pred, true){
                      "slope" = u_slope, "var" = u_var, "ci"   = ci)
   
   return(theil_coef)
-  
 }
 
 
-confidence_interval <- function(pred, true){
+
+
+confidenceInterval <- function(pred, true){
   
   n   <- length(pred)
   ssd <- (pred - true)**2
@@ -402,7 +403,7 @@ get_significant_code <- function(p_value){
 }
 
 
-get_mle_predictions <- function(type, trees){
+getPredsMLE <- function(type, trees){
   
   if      (type == "crbd") {
     n_param    <- 2
@@ -467,6 +468,70 @@ get_mle_predictions <- function(type, trees){
 }
 
 
+getPredsMleCrbdApe <- function(trees){
+  
+  # Set up 
+  n_param           <- 2
+  name.param        <- c("lambda", "mu")
+  pred.param        <- vector(mode='list', length=n_param)
+  names(pred.param) <- name.param
+  n_trees           <- length(trees)
+  
+  # Loop on phylogenies 
+  for (i in 1:n_trees){
+    tree         <- trees[[i]]            # select the phylogeny 
+    fit.ape      <- ape::birthdeath(tree) # fit birth-death model 
+    pred.r       <- fit.ape$para[[2]]     # r: diversification rate 
+    pred.epsilon <- fit.ape$para[[1]]     # epsilon: turnover rate
+    
+    # compute lambda and mu from r and epsilon 
+    pred <- get_lambda_mu_single(c(pred.r, pred.epsilon))
+    
+    for (j in 1:n_param){
+      param           <- pred[j]
+      pred.param[[j]] <- c(pred.param[[j]], param)
+    } 
+    progress(i, n_trees, progress.bar = TRUE, init = (i==1)) 
+  }
+  return(pred.param)
+} 
+
+
+getPredsMleCrbdDiversitree <- function(trees){
+  
+  # Set up 
+  n_param           <- 2
+  name.param        <- c("lambda", "mu")
+  pred.param        <- vector(mode='list', length=n_param)
+  names(pred.param) <- name.param
+  n_trees           <- length(trees)
+  
+  # Loop on phylogenies 
+  for (i in 1:n_trees){
+    tree            <- trees[[i]]
+    lik             <- diversitree::make.bd(tree)
+    fit.diversitree <- find.mle(lik, c(.5, .2)) # fit bd model 
+    while (fit.diversitree$code == 3){
+      lambda.init <- runif(1,0.1,1)
+      mu.init     <- runif(1,0.,1)
+      fit.diversitree <- find.mle(lik, c(lambda.init, mu.init))
+    }
+    if (fit.diversitree$code == 3 ){print(i)}
+    pred.lambda     <- fit.diversitree$par[[1]] # get lambda prediction 
+    pred.mu         <- fit.diversitree$par[[2]] # get mu prediction 
+    param           <- c(pred.lambda, pred.mu)
+    
+    for (j in 1:n_param){
+      #param           <- pred[j]
+      pred.param[[j]] <- c(pred.param[[j]], param[j])
+    } 
+    progress(i, n_trees, progress.bar = TRUE, init = (i==1)) 
+  }
+  return(pred.param)
+}
+
+
+
 plot_error_barplot_all <- function(pred.param, true.param, param.range.in, name.param,
                                    save = FALSE, fname = NA){
   
@@ -499,7 +564,7 @@ plot_error_barplot_all <- function(pred.param, true.param, param.range.in, name.
                                                 range.in[2])
       pred.in <- pred_true.filter$pred.in # predictions in the inner domain
       true.in <- pred_true.filter$true.in # true values in the inner domain 
-      theil_coef <- get_theil_coefficients(pred.in, true.in) # get the split error 
+      theil_coef <- getTheilCoefs(pred.in, true.in) # get the split error 
       theil_coef.list[[i]][[name.model]] <- theil_coef # save split error 
     }
   }
@@ -531,7 +596,7 @@ plot_error_barplot_single <- function(theil_coef_list, name.param){
   df.error.decomp <- data.frame(matrix(ncol = length(theil_coef_list), nrow = 3))
   colnames(df.error.decomp) <- names(theil_coef_list)
   rownames(df.error.decomp) <- c("Bias Uni.", "Bias Cons.", "Variance")
-  
+
   ci_center <- c()
   ci_width  <- c()
   
@@ -543,13 +608,15 @@ plot_error_barplot_single <- function(theil_coef_list, name.param){
     center <- theil_coef_list[[model]][[1]]
     width  <- theil_coef_list[[model]][[6]]
     ci_center <- c(ci_center, center)
-    ci_width  <- c(ci_width ,width)
+    ci_width  <- c(ci_width , width)
   }
   
   names.arg <- c()
   for (name in colnames(df.error.decomp)){
     names.arg <- c(names.arg, name.model.tex[[name]])
   } 
+  
+  print(df.error.decomp)
 
   legend <- c("Bias Uni.", "Bias Cons.", "Variance")
 
@@ -563,13 +630,13 @@ plot_error_barplot_single <- function(theil_coef_list, name.param){
          legend = legend,
          fill = c("black", "darkgray","white"))
   
-  #error.bar(ze_barplot, ci_center, ci_width)
+  error.bar(ze_barplot, ci_center, ci_width)
   
 }
 
 
 #A function to add arrows on the chart
-error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
+error.bar <- function(x, y, upper, lower=upper, length=0.05,...){
   arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)
 }
 
@@ -823,76 +890,10 @@ plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees, nn_
 
 #### Generating, Converting, Saving and Loading ####
 
-#' Generate phylogenetic trees 
-#'
-#' Create a given number of trees of a choosen size and rates. This trees are
-#' stored in a list.
-#'
-#' @param n_trees number of trees to generate 
-#' @param n_taxa size of the trees 
-#' @param lambda_range vector containg the min and max of the speciation rates 
-#'                     of the trees generated. For each trees the speciation 
-#'                     rate will randomly drawn in this interval
-#' @param lambda_range vector containg the min and max of the turnover rates 
-#'                     of the trees generated. For each trees the turnover 
-#'                     rate will randomly drawn in this interval
-#' @param ss_check logical, should we check that the summary statistics 
-#'                 corresponding to the generated trees doesn't contain any NA
-#'                 values (default = TRUE)
-#'              
-#' @return out list of outputs 
-#'         $trees -> trees, the list of the generated trees 
-#'         $lambda -> vec.lambda, vector of speciation rates of the generated trees
-#'         $mu -> vec.mu, vector of extinction rates of generated trees
-#' 
-#' @export
-#' @examples
-generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
-  
-  # Initialization
-  trees      <- list() # where trees will be stored 
-  n_param    <- length(param.range) # number of parameters
-  print(param.range)
-  true.param <- vector(mode='list', length=n_param)
-  names(true.param) <- c("lambda", "mu") 
 
-  cat("Generation of phylogenies...\n")
-  
-  while (length(trees) < n_trees){
-    
-    # Generate the phylogenetic tree parameters 
-    vec.param <- drawRateCRBD(param.range)
-    
-    # Draw the number of tips of the tree
-    n_taxa.i <- drawPhyloSize(n_taxa)
-    
-    # Generate tree
-    tree <- trees(c(vec.param[1], vec.param[2]), "bd", max.taxa=n_taxa.i)[[1]] 
-    
-    # Checking that Summary Statistics have no NA
-    if (ss_check){
-      ss       <- get_ss(tree)    # compute summary statistics
-      no_NA_ss <- !any(is.na(ss)) # does SS have any NA values?
-    }
-    
-    # If no checking or SS without NAs
-    if (no_NA_ss || !ss_check){
-        trees <- append(trees, list(tree)) # save tree
-        for (i in 1:n_param){
-          true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
-        }
-        progress(length(trees), n_trees, progress.bar = TRUE, # print
-                 init = (length(trees)==1))                   # progression
-    }
-  }
-  
-  cat("\nGeneration of phylogenies... Done.")
-  
-  # Prepare output containing: trees (list), true param values (vector).
-  out <- list("trees"    = trees, 
-              "param"    = true.param)
-  
-  return(out)
+drawPhyloSize <- function(n_taxa){
+  size <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
+  return(size)
 }
 
 
@@ -933,9 +934,75 @@ drawRateBiSSE <- function(param.range){
 }
 
 
-drawPhyloSize <- function(n_taxa){
-  size <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
-  return(size)
+#' Generate phylogenetic trees 
+#'
+#' Create a given number of trees of a choosen size and rates. This trees are
+#' stored in a list.
+#'
+#' @param n_trees number of trees to generate 
+#' @param n_taxa size of the trees 
+#' @param lambda_range vector containg the min and max of the speciation rates 
+#'                     of the trees generated. For each trees the speciation 
+#'                     rate will randomly drawn in this interval
+#' @param lambda_range vector containg the min and max of the turnover rates 
+#'                     of the trees generated. For each trees the turnover 
+#'                     rate will randomly drawn in this interval
+#' @param ss_check logical, should we check that the summary statistics 
+#'                 corresponding to the generated trees doesn't contain any NA
+#'                 values (default = TRUE)
+#'              
+#' @return out list of outputs 
+#'         $trees -> trees, the list of the generated trees 
+#'         $lambda -> vec.lambda, vector of speciation rates of the generated trees
+#'         $mu -> vec.mu, vector of extinction rates of generated trees
+#' 
+#' @export
+#' @examples
+generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
+  
+  # Initialization
+  trees      <- list() # where trees will be stored 
+  n_param    <- length(param.range) # number of parameters
+  true.param <- vector(mode='list', length=n_param)
+  names(true.param) <- c("lambda", "mu") 
+  
+  cat("Generation of phylogenies...\n")
+  
+  while (length(trees) < n_trees){
+    
+    # Generate the phylogenetic tree parameters 
+    vec.param <- drawRateCRBD(param.range)
+    
+    # Draw the number of tips of the tree
+    n_taxa.i <- drawPhyloSize(n_taxa)
+    
+    # Generate tree
+    tree <- trees(c(vec.param[1], vec.param[2]), "bd", max.taxa=n_taxa.i)[[1]] 
+    
+    # Checking that Summary Statistics have no NA
+    if (ss_check){
+      ss       <- get_ss(tree)    # compute summary statistics
+      no_NA_ss <- !any(is.na(ss)) # does SS have any NA values?
+    }
+    
+    # If no checking or SS without NAs
+    if (no_NA_ss || !ss_check){
+      trees <- append(trees, list(tree)) # save tree
+      for (i in 1:n_param){
+        true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
+      }
+      progress(length(trees), n_trees, progress.bar = TRUE, # print
+               init = (length(trees)==1))                   # progression
+    }
+  }
+  
+  cat("\nGeneration of phylogenies... Done.")
+  
+  # Prepare output containing: trees (list), true param values (vector).
+  out <- list("trees"    = trees, 
+              "param"    = true.param)
+  
+  return(out)
 }
 
 
@@ -1209,7 +1276,7 @@ get_model_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_
 }
 
 
-get_dataset_save_name <- function(n_trees, n_taxa, param.range, ss_check){
+getSaveName <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   
   dir <- "trees-dataset/"
   
@@ -1222,13 +1289,15 @@ get_dataset_save_name <- function(n_trees, n_taxa, param.range, ss_check){
   fname.mle    <- paste(dir, fname, "-mle.rds", sep="")
   fname.encode <- paste(dir, fname, "-encode.rds", sep="")
   fname.ltt    <- paste(dir, fname, "-ltt.rds", sep="")
+  fname.df     <- paste(dir, fname, "-df.rds", sep="")
   
   fnames <- list("trees"  = fname.trees, 
                  "param"  = fname.param, 
                  "ss"     = fname.ss, 
                  "mle"    = fname.mle, 
                  "encode" = fname.encode, 
-                 "ltt"    = fname.ltt)
+                 "ltt"    = fname.ltt,
+                 "df"     = fname.df)
   
   return(fnames)
   
@@ -1253,8 +1322,8 @@ get_dataset_save_name <- function(n_trees, n_taxa, param.range, ss_check){
 #' 
 #' @export
 #' @examples
-save_dataset_trees <- function(trees, true.param, n_trees, n_taxa,
-                               param.range, ss_check){
+savePhylogeny <- function(trees, true.param, n_trees, n_taxa,
+                          param.range, ss_check = TRUE){
   
   # Getting file names to save 
   fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)
@@ -1291,10 +1360,11 @@ save_dataset_trees <- function(trees, true.param, n_trees, n_taxa,
 #' 
 #' @export
 #' @examples
-load_dataset_trees <- function(n_trees, n_taxa, param.range, ss_check, load_trees){
+readPhylogeny <- function(n_trees, n_taxa, param.range, ss_check = TRUE,
+                          load_trees = TRUE){
   
   # Getting file names to load 
-  fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)
+  fnames <- getSaveName(n_trees, n_taxa, param.range, ss_check)
   fname.trees  <- fnames$trees
   fname.param  <- fnames$param
 
@@ -1330,7 +1400,7 @@ load_dataset_trees <- function(n_trees, n_taxa, param.range, ss_check, load_tree
 #' 
 #' @export
 #' @examples
-save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa, param.range){
+saveSummaryStatistics <- function(df.ss, n_trees, n_taxa, param.range){
   
   fnames   <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check = TRUE)
   fname.ss <- fnames$ss
@@ -1357,9 +1427,9 @@ save_dataset_summary_statistics <- function(df.ss, n_trees, n_taxa, param.range)
 #' 
 #' @export
 #' @examples
-load_dataset_summary_statistics <- function(n_trees, n_taxa, param.range){
+readSummaryStatistics <- function(n_trees, n_taxa, param.range){
   
-  fnames <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check = TRUE)
+  fnames <- getSaveName(n_trees, n_taxa, param.range, ss_check = TRUE)
   fname.ss <- fnames$ss
   
   cat("Loading summary statistics data...\n")
@@ -1438,12 +1508,22 @@ get_plot_save_name <- function(model_type, n_trees, n_taxa, lambda_range, epsilo
   
 }
 
-get_mle_preds_save_name <- function(n_trees, n_taxa, param.range, ss_check){
+
+getSaveNamePredsMLE <- function(n_trees, n_taxa, param.range, ss_check =TRUE){
   fname <- get_dataset_save_name(n_trees, n_taxa, param.range, ss_check)$ss
   fname <- substring(fname, 1, nchar(fname) - 6)
   fname <- paste(fname, "mle.rds", sep = "")
   return(fname)
 }
+
+
+savePredsMLE <- function(pred.param, n_trees, n_taxa, param.range,
+                         ss_check = TRUE){
+  fname <- getSaveNamePredsMLE(n_trees, n_taxa, param.range, ss_check)
+  saveRDS(pred.param, fname)
+}
+
+
 
 get_preds_save_name <- function(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
                                  n_test, n_layer, n_hidden, n_train, ker_size = NA){

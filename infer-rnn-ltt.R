@@ -31,14 +31,13 @@ ss_check <- TRUE
 # Generate the trees and save 
 
 if (model_type == "crbd"){
-  out   <- load_dataset_trees(n_trees, n_taxa, param.range, ss_check = ss_check, 
-                              load_trees = TRUE)
+  out        <- readPhylogeny(n_trees, n_taxa, param.range, load_trees = TRUE)
   trees      <- out$trees # contains the phylogenetic trees generated
   true.param <- out$param # contains the true values of the parameters 
   
   # Generate LTT data.frame
   df.ltt <- generate_ltt_dataframe(trees, n_taxa, true.param)$ltt
-  ds.ltt    <- convert_ltt_dataframe_to_dataset(df.ltt, true.param, nn_type)
+  ds.ltt <- convert_ltt_dataframe_to_dataset(df.ltt, true.param, nn_type)
 }
 
 if (model_type == "bisse"){
@@ -147,7 +146,7 @@ opt <- optim_adam(params = rnn$parameters) # optimizer
 
 train_batch <- function(b){
   opt$zero_grad()
-  if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
+  #if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
   b$x <- b$x$squeeze(2)$unsqueeze(3)
   output <- rnn(b$x$to(device = device))
   target <- b$y$to(device = device)
@@ -158,7 +157,7 @@ train_batch <- function(b){
 }
 
 valid_batch <- function(b) {
-  if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
+  #if (model_type == "crbd"){b$x <- b$x$unsqueeze(2)}
   b$x <- b$x$squeeze(2)$unsqueeze(3)
   output <- rnn(b$x$to(device = device))
   target <- b$y$to(device = device)
@@ -176,6 +175,7 @@ last_loss <- 100
 n_train_batch <- length(train.set)
 n_valid_batch <- length(valid.set)
 
+start_time <- Sys.time()
 
 while (epoch <= n_epochs & trigger < patience) {
   
@@ -240,6 +240,10 @@ while (epoch <= n_epochs & trigger < patience) {
   epoch <- epoch + 1 
 }
 
+end_time <- Sys.time()
+
+run_time <- end_time - start_time
+print(run_time)
 
 # Evaluation of the predictions of the RNN w/ test set 
 
@@ -278,29 +282,24 @@ if (length(n_taxa) == 1) {
 
 # Prepare plot 
 true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices,])
-fname.mle <- get_mle_preds_save_name(n_trees, n_taxa, param.range, ss_check)
+fname.mle <- getSaveName(n_trees, n_taxa, param.range)$mle
 mle.pred <- readRDS(fname.mle)
 mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices,])
+if (model_type == "bisse"){mle.pred.test <- mle.pred.test[-c(2,3,4,6)]}
 pred.param.test <- list("mle" = mle.pred.test)
-pred.param.test[[nn_type]] <- nn.pred
-param.range.ajusted <- param.range[-4]
-param.range.ajusted[["mu"]] <- c(param.range[["c"]][1]*param.range[["epsilon"]][1],
-                                 param.range[["c"]][2]*param.range[["epsilon"]][2])
+pred.param.test[["rnn_ltt"]] <- nn.pred
+if (model_type == "bisse"){
+  param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,.1))
+  param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(.02,.09))
+} else{
+  param.range.ajusted <- list("lambda" = c(0.1,1.), "q" = c(0.,1.))
+  param.range.in      <- list("lambda" = c(0.2,.9), "q" = c(0.,.8))
+}
 
-plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted)
+plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted, 
+                      param.range.in, fname = "", 
+                      save = FALSE)
 
-
-# Plot Predictions 
-trees_test <- trees[test_indices] # test trees
-plot_together_nn_mle_predictions(pred.list, true.list, trees_test, nn_type, n_trees, n_taxa, 
-                                 lambda_range, epsilon_range, n_layer, n_hidden, n_train,
-                                 save = FALSE)
-
-
-pred.list.mle <- get_mle_preds(trees_test)
-pred.list.all <- list()
-pred.list.all[[nn_type]] <- pred.list
-pred.list.all[["mle"]]   <- pred.list.mle
-
-plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = FALSE, n_trees, n_taxa, 
-                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train)
+#reord_names <- c("mle","cnn_cblv", "dnn-ss", "cnn-ltt", "rnn-ltt", "gnn-phylo")
+plot_error_barplot_all(pred.param.test, true.param.test, param.range.in, name.param,
+                       save = FALSE, fname = "")

@@ -1095,7 +1095,7 @@ generate_ss_dataframe <- function(n_trees, n_taxa,
 }
 
 
-generate_ss_dataframe_from_trees <- function(trees, true.param){
+generateSumStatFromPhylo <- function(trees, true.param){
   
   ss.names <- create_ss.names() # summary statistic names 
   df <- create_ss_dataframe(ss.names) # initialize the data.frame (empty)

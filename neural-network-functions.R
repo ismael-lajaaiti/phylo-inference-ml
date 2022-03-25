@@ -35,6 +35,7 @@ compute_dim_ouput_flatten_cnn <- function(n_input, n_layer, kernel_size = 2){
   
   for (i in 1:n_layer){
     n_input <- as.integer((n_input - k)/2)
+    print(n_input)
   }
   
   return(n_input)
