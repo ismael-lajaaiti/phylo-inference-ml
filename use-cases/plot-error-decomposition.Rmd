@@ -1,6 +1,6 @@
 ---
 title: "Plot Error Decomposition"
-output: pdf_document
+output: html
 editor_options: 
   chunk_output_type: console
 ---
