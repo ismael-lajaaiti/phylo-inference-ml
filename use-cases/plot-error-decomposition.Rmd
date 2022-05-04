@@ -8,8 +8,7 @@ editor_options:
 Set up: import libraries and set seed.
 
 ```{r setup, include=FALSE}
-library(latex2exp)
-library(igraph)
+source("R/phylo-inference-ml.R")
 set.seed(113)
 ```
 

@@ -2,7 +2,7 @@
 # SCRIPT TO PLOT FIGURES #
 ##########################
 
-source("R/infer-phylo-ml.R")
+source("R/phylo-inference-ml.R")
 
 param.crbd      <- readRDS("data/predictions-crbd.rds")
 true.param.crbd <- param.crbd$true
