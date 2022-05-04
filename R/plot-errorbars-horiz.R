@@ -2,14 +2,15 @@
 # SCRIPT TO PLOT FIGURES #
 ##########################
 
+source("R/infer-phylo-ml.R")
 
-param.crbd      <- readRDS("params-testset-crbd.rds")
+param.crbd      <- readRDS("data/predictions-crbd.rds")
 true.param.crbd <- param.crbd$true
 pred.param.crbd <- param.crbd$pred
 names(pred.param.crbd) <- c("MLE", "CNN-CBLV", "RNN-LTT", "CNN-LTT", "DNN-SS",
                             "GNN-PHY")
 
-params.bisse     <- readRDS("params-testset-bisse.RDS")
+param.bisse     <- readRDS("data/predictions-bisse.rds")
 true.param.bisse <- param.bisse$true
 pred.param.bisse <- param.bisse$pred
 names(pred.param.bisse) <- c("MLE", "RNN-LTT", "CNN-LTT", "CNN-CBLV", "DNN-SS",
@@ -123,7 +124,7 @@ df.q       <- sortDataFrame(df.q)
 legend    <- c("uniform bias", "consistency bias", "variance")
 rows <- c("uniform bias", "consistency bias", "variance")
 
-pdf("test.pdf", width=6*1.62, height=6)                  # Apply pdf function
+pdf("figures/fig-error-bars-main.pdf", width=6*1.62, height=6)                  # Apply pdf function
 par(mfrow = c(2,2),  mar = c(4.5,4,1,1))
 
 plotBar <- function(df, name.param, ylab = "", legend = FALSE, mle_line = FALSE, 
