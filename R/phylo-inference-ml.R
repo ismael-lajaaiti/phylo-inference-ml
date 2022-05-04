@@ -9,6 +9,7 @@ library(castor)
 library(phangorn)
 library(svMisc)
 library(torch)
+library(igraph)
 
 # Source scripts.
 source("R/infer-general-functions.R")
