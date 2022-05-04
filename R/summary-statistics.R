@@ -4,21 +4,6 @@
 # DOI:10.1371/journal.pcbi.1005416
 
 
-
-#### Libraries & Sources####
-
-
-library(ape)
-library(diversitree)
-library(castor)
-library(phangorn)
-library(svMisc)
-source("encode-cblv.R")
-
-
-#### end ####
-
-
 #### Nodes data.frame ####
 
 

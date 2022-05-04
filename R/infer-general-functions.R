@@ -1,18 +1,6 @@
 # This file contains the general functions needed during the interference 
 # processes 
 
-
-#### Libraries & Sources ####
-
-library(ape)
-library(diversitree)
-library(RPANDA)
-library(MLmetrics)
-library(latex2exp)
-source("summary-statistics.R")
-
-#### end ####
-
 #### Operations on Rates ####
 
 #' Compute r and epsilon

@@ -3,19 +3,6 @@
 # See Voznica 2021 - bioRxiv - DOI:10.1101/2021.03.11.435006 
 
 
-#### Libraries ####
-
-
-library(ape)
-library(diversitree)
-library(castor)
-library(phangorn)
-library(svMisc)
-library(torch)
-
-
-#### end ####
-
 
 #### Encoding Tree ####
 
