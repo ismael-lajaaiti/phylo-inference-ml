@@ -10,6 +10,7 @@ library(phangorn)
 library(svMisc)
 library(torch)
 library(igraph)
+library(scales)
 
 # Source scripts.
 source("R/infer-general-functions.R")
