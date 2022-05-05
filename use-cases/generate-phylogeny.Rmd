@@ -1,0 +1,54 @@
+---
+title: "Generate Phylogeny"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Set up.
+
+```{r}
+source("R/phylo-inference-ml.R")
+model <- "crbd" # type of the model, either: "crbd" or "bisse"
+n_trees <- 100 # number of trees to generate
+n_taxa <- c(100, 1000) # range size of the generated phylogenies
+compute_mle <- TRUE # should mle predictions be computed and saved
+```
+
+Define space parameters.
+
+```{r}
+# For the CRBD model
+lambda_range <- c(0.1, 1.0) # speciation rate
+epsilon_range <- c(0.0, 0.9) # turnover rate
+param.range.crbd <- list(
+  "lambda" = lambda_range,
+  "epsilon" = epsilon_range
+)
+
+# For the BiSSE model
+lambda_range <- c(0.1, 1.) # speciation rate
+q_range <- c(0.01, 0.1) # transition rate
+param.range.bisse <- list(
+  "lambda" = lambda_range,
+  "q" = q_range
+)
+
+# Select the parameter space of the choosen diversification model
+param.range.list <- list(
+  "crbd" = param.range.crbd,
+  "bisse" = param.range.bisse
+)
+param.range <- param.range.list[[model]]
+```
+
+Generating and saving phylogenies
+
+```{r}
+out <- generatePhylo(model, n_trees, n_taxa, param.range)
+phylo <- out$trees
+params <- out$param
+
+saveRDS(phylo, paste("data/phylogeny-", model, "-new.rds", sep=""))
+saveRDS(params, paste("data/true-parameters-", model, "-new.rds", sep=""))
+```
