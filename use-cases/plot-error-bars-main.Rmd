@@ -1,6 +1,6 @@
 ---
 title: "Plot Error Bars Main"
-output: html
+output: html_document
 editor_options: 
   chunk_output_type: console
 ---
