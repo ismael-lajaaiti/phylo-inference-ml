@@ -1,43 +1,38 @@
 ---
-title: "Deep-learning Cheating"
+title: "Plot Boundary Effect"
 output: html_document
 editor_options: 
   chunk_output_type: console
 ---
 
+Set up.
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+source("R/phylo-inference-ml.R")
+set.seed(113)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+Plot.
 
 ```{r}
-#source("infer-general-functions.R") 
-pdf("fig-deep-learning-cheating.pdf", width=6*1.1, height=6)
-pred.crbd = readRDS("params-testset-crbd.rds") # load data
-true      = pred.crbd$true$lambda          # select wanted true values 
-pred.nn   = pred.crbd$pred$`dnn-ss`$lambda # select wanted pred values by NN
-pred.mle  = pred.crbd$pred$mle$lambda      # select wanted pred values by MLE
-plot(true, pred.mle, xlab = TeX("$\\lambda$  True"), ylab = TeX("$\\lambda$  Predicted"), cex = .6,
-     col = alpha("red", .6), xlim = c(-0.,1.1), ylim = c(-0.,1.2), pch = 20)
+pdf("figures/fig-deep-learning-boundary-effect.pdf", width = 6 * 1.1, height = 6)
+pred.crbd <- readRDS("data/predictions-crbd.rds") # load data
+true <- pred.crbd$true$lambda # select wanted true values
+pred.nn <- pred.crbd$pred$`dnn-ss`$lambda # select wanted pred values by NN
+pred.mle <- pred.crbd$pred$mle$lambda # select wanted pred values by MLE
+plot(true, pred.mle,
+  xlab = TeX("$\\lambda$  True"), ylab = TeX("$\\lambda$  Predicted"), cex = .6,
+  col = alpha("red", .6), xlim = c(-0., 1.1), ylim = c(-0., 1.2), pch = 20
+)
 points(true, pred.nn, cex = .6, col = alpha("black", .4), pch = 20)
 abline(1, 0, lty = 2, col = "grey30", lw = 2)
-abline(v=.9, col ="grey50", lty = 1, lw = 2)
-abline(v=.2, col ="grey50", lty = 1, lw = 2)
-legend("bottomright", legend = c("MLE", "DNN-SS", "y=1","Boundaries"), 
-       lty = c(NA,NA,2,1), lw = c(NA,NA,2,2), pch = c(20,20,NA,NA),
-       col = c("red", "black", "grey30", "grey50"), cex = 1.1, bg = "white")
+abline(v = .9, col = "grey50", lty = 1, lw = 2)
+abline(v = .2, col = "grey50", lty = 1, lw = 2)
+legend("bottomright",
+  legend = c("MLE", "DNN-SS", "y=1", "Boundaries"),
+  lty = c(NA, NA, 2, 1), lw = c(NA, NA, 2, 2), pch = c(20, 20, NA, NA),
+  col = c("red", "black", "grey30", "grey50"), cex = 1.1, bg = "white"
+)
 dev.off()
-
 ```
-
-
-```{r pressure, echo=FALSE}
-getTheilCoefs(true, pred.nn)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
