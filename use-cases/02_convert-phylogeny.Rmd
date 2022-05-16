@@ -1,0 +1,101 @@
+---
+title: "Convert Phylogeny"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Once the phylogenies have been generated (by `01_generate-phylogeny.Rmd`),
+we have then to convert them 
+according to the different representations considered.
+In our study we considered four different phylogeny representations:
+
+1.  summary statistics
+2.  CBLV (matrix encoding of the whole phylogeny)
+3.  LTT (Lineage Through Time)
+4.  graph
+
+We go over the conversion toward each of these representations one by one.
+
+## Set up 
+
+```{r}
+source("R/phylo-inference-ml.R")
+set.seed(113)
+phylo <- readRDS("data/new-phylogeny-crbd.rds") # change file name if needed
+true_params <- readRDS("data/new-phylogeny-crbd-true.rds") # same
+```
+
+## Summary statistics
+
+The computation of the summary statistics can be done simply by calling 
+`generateSumStatFromPhylo` with the phylogenies and the true parameters given
+as arguments. 
+
+```{r}
+sumstat <- generateSumStatFromPhylo(phylo, true_params) 
+```
+
+Saving
+
+```{r}
+saveRDS(sumstat, "data/new-phylogenies-crbd-sumstat.rds")
+```
+
+## CBLV
+
+To encode the phylogeny call `generate_encoding`.
+Moreover, if you are considering the BiSSE model
+and you want to include tip state information in the encoding,
+call instead `generate_encoding_bisse`.
+
+```{r}
+max_taxa <- 1000 # maximum phylogeny size, change if needed
+cblv <- generate_encoding(phylo, max_taxa) 
+# If model == "bisse", do call 
+# cblv <- generate_encoding_bisse(phylo, max_taxa)
+```
+
+Saving 
+
+```{r}
+saveRDS(sumstat, "data/new-phylogenies-crbd-cblv.rds")
+```
+
+
+## LTT
+
+LTT or Lineage Through Time is a timeserie 
+describing the increase of phylogeny lineages over time.
+In a similar manner than above representations,
+LTTs can be generated in one line.
+
+```{r}
+taxa_range <- c(100,1000) # range of phylogeny size
+ltt <- generate_ltt_dataframe(phylo, taxa_range, true_params)$ltt
+```
+
+Saving 
+
+```{r}
+saveRDS(sumstat, "data/new-phylogenies-crbd-ltt.rds")
+```
+
+
+## Graph
+
+The last representation is the phylogeny graph.
+As phylogeny graphs are handled by PyTorch Geometric (in Python), 
+this step is just a pre-formatting of the data. 
+The formatting will be finalized in Python.
+
+```{r}
+graphs <- generate_phylogeny_graph(phylo)
+```
+
+Saving 
+
+```{r}
+saveRDS(graphs, "data/new-phylogenies-crbd-graph.rds")
+```
+
