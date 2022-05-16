@@ -1,9 +1,3 @@
-# Libraries and Sources 
-library(svMisc)
-source("infer-general-functions.R")
-
-
-
 #' Create the edges dataframe of a phylo tree 
 #'
 #' For a graph with N edges, the dataframe has a shape (N, 2). One row 
@@ -145,41 +139,54 @@ get_time.asym <- function(tree, node){
   return(asym)
 }
 
-
 get_node_state <- function(tree, i){
   if (is_tip(tree, i)){state <- tree$tip.state[[i]]} # node is tip, save state
   else{state <- -1} # node isn't tip, state is unknown (i.e. -1)
   return(state)
 }
 
-
-# Simulations parameters 
-n_trees  <- 10009 # number of trees 
-n_taxa   <- c(100,1000) # taxa range
-param.range <- list("lambda" = c(0.1,1.),
-                    "epsilon"= c(0.,.9)) # range of each parameters 
-ss_check <- TRUE # no NAs in the summary statistics?
-
-# Preparation 
-out <- readPhylogeny(n_trees, n_taxa, param.range) # load trees 
-trees <- out$trees # extract 
-list.df.tree <- list() # where dataframe will be stored 
-
-
-# Computing the node and edge data frame for each tree and save them to the list
-for (i in 1:n_trees){
-  progress(i, max.value = n_trees, progress.bar = TRUE, init = (i == 1))
-  tree <- trees[[i]]
-  df.edge <- get_edge_df(tree)
-  df.node <- get_node_df(tree)
-  df.list <- list("node" = df.node, "edge" = df.edge)
-  list.df.tree[[i]] <- df.list
+generate_phylogeny_graph <- function(phylogenies) {
+  out <- list()
+  n <- length(phylogenies)
+  for (i in 1:n){
+    progress(i, max.value = n, progress.bar = TRUE, init = (i == 1))
+    phylo <- phylogenies[[i]]
+    df.edge <- get_edge_df(phylo)
+    df.node <- get_node_df(phylo)
+    df.list <- list("node" = df.node, "edge" = df.edge)
+    out[[i]] <- df.list
+  }
+  out
 }
 
-# Saving 
-dir   <- "trees-dataset"
-fname <- get_backbone_save_name(n_trees, n_taxa, param.range) # save name for file 
-fname <- paste(fname, "sscheck", ss_check, "df.rds", sep = "-")
-fname <- paste(dir, fname, sep = "/")
-saveRDS(list.df.tree, fname) # saving file 
-cat(paste(fname, " saved.\n"))
+# 
+# # Simulations parameters 
+# n_trees  <- 10009 # number of trees 
+# n_taxa   <- c(100,1000) # taxa range
+# param.range <- list("lambda" = c(0.1,1.),
+#                     "epsilon"= c(0.,.9)) # range of each parameters 
+# ss_check <- TRUE # no NAs in the summary statistics?
+# 
+# # Preparation 
+# out <- readPhylogeny(n_trees, n_taxa, param.range) # load trees 
+# trees <- out$trees # extract 
+# list.df.tree <- list() # where dataframe will be stored 
+# 
+# 
+# # Computing the node and edge data frame for each tree and save them to the list
+# for (i in 1:n_trees){
+#   progress(i, max.value = n_trees, progress.bar = TRUE, init = (i == 1))
+#   tree <- trees[[i]]
+#   df.edge <- get_edge_df(tree)
+#   df.node <- get_node_df(tree)
+#   df.list <- list("node" = df.node, "edge" = df.edge)
+#   list.df.tree[[i]] <- df.list
+# }
+# 
+# # Saving 
+# dir   <- "trees-dataset"
+# fname <- get_backbone_save_name(n_trees, n_taxa, param.range) # save name for file 
+# fname <- paste(fname, "sscheck", ss_check, "df.rds", sep = "-")
+# fname <- paste(dir, fname, sep = "/")
+# saveRDS(list.df.tree, fname) # saving file 
+# cat(paste(fname, " saved.\n"))
