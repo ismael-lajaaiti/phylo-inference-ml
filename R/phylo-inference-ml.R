@@ -15,5 +15,5 @@ library(scales)
 # Source scripts.
 source("R/infer-general-functions.R")
 source("R/convert-phylo-to-sumstat.R")
-source("R/convert-phylo-to-cblv.R.R")
-source("R/convert-phylo-to-graph.R.R")
+source("R/convert-phylo-to-cblv.R")
+source("R/convert-phylo-to-graph.R")
