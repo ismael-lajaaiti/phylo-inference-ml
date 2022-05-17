@@ -1,0 +1,223 @@
+---
+title: "Predict phylogeny parameters with CNN and CBLV encoding"
+output: html_document
+knitr: opts_knit$set(root.dir = "../")
+editor_options: 
+  chunk_output_type: console
+---
+
+Before running this you should have 
+generated your phylogenies (`01_generate-phylogeny.Rmd`)
+and computed their CBLV encodings (`02_convert-phylogeny.Rmd`).
+
+## Set up
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+```
+
+Data preparation: here we just need to scale the summary statistics,
+before giving them to the DNN,
+so that they are all put on an equal footing. 
+
+```{r}
+source(here("R","phylo-inference-ml.R"))
+set.seed(113)
+cblv <- readRDS("data/new-phylogeny-crbd-cblv.rds")
+true <- readRDS("data/new-phylogeny-crbd-true.rds")
+n_taxa <- c(100, 1000) # range of phylogeny size
+device = "cpu" # change if you want to compute GPUs
+```
+
+
+## Create datasets
+
+Define the of the training, validation and test sets. 
+
+```{r}
+# Define size of datasets.
+n_train    <- 90
+n_valid    <- 5
+n_test     <- 5
+batch_size <- 4
+
+# Pick the phylogenies randomly.
+ds <- convert_encode_to_dataset(cblv, true)
+train_indices <- sample(1:ncol(cblv), n_train)
+not_train_indices <- setdiff(1:ncol(cblv), train_indices)
+valid_indices <- sample(not_train_indices, n_valid)
+test_indices  <- setdiff(not_train_indices, valid_indices)
+
+# Create the datasets.
+train_ds <- ds(cblv[1:nrow(cblv), train_indices], 
+               extract_elements(true, train_indices))
+valid_ds <- ds(cblv[1:nrow(cblv), valid_indices], 
+               extract_elements(true, valid_indices))
+test_ds  <- ds(cblv[1:nrow(cblv), test_indices], 
+               extract_elements(true, test_indices))
+
+# Create the dataloader.
+train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
+valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
+test_dl  <- test_ds  %>% dataloader(batch_size=1, shuffle=FALSE)
+```
+
+## Build the neural network 
+
+```{r}
+n_hidden <- 8
+n_layer  <- 4
+ker_size <- 10
+n_input  <- nrow(cblv)
+n_out    <- length(true)
+p_dropout <- 0.01
+
+
+# Build the CNN
+
+cnn.net <- nn_module(
+  
+  "corr-cnn",
+  
+  initialize = function(n_input, n_out, n_hidden, n_layer, ker_size) {
+    self$conv1 <- nn_conv1d(in_channels = 1, out_channels = n_hidden, kernel_size = ker_size)
+    self$conv2 <- nn_conv1d(in_channels = n_hidden, out_channels = 2*n_hidden, kernel_size = ker_size)
+    self$conv3 <- nn_conv1d(in_channels = 2*n_hidden, out_channels = 4*n_hidden, kernel_size = ker_size)
+    self$conv4 <- nn_conv1d(in_channels = 4*n_hidden, out_channels = 8*n_hidden, kernel_size = ker_size)
+    n_flatten  <- compute_dim_ouput_flatten_cnn(n_input, n_layer, ker_size)
+    self$fc1   <- nn_linear(in_features = n_flatten * (8*n_hidden), out_features = 100)
+    self$fc2   <- nn_linear(in_features = 100, out_features = n_out)
+  },
+  
+  forward = function(x) {
+    x %>% 
+      self$conv1() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      nnf_avg_pool1d(2) %>%
+      
+      self$conv2() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      nnf_avg_pool1d(2) %>%
+      
+      self$conv3() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      nnf_avg_pool1d(2) %>%
+
+      self$conv4() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      nnf_avg_pool1d(2) %>%
+      
+      torch_flatten(start_dim = 2) %>%
+      self$fc1() %>%
+      nnf_dropout(p = p_dropout) %>%
+      nnf_relu() %>%
+      
+      self$fc2()
+  }
+)
+
+cnn <- cnn.net(n_input, n_out, n_hidden, n_layer, ker_size) # create CNN
+cnn$to(device = device) # Move it to the choosen GPU
+opt <- optim_adam(params = cnn$parameters) # optimizer 
+```
+
+## Training 
+
+```{r}
+train_batch <- function(b){
+  opt$zero_grad()
+  output <- cnn(b$x$to(device = device))
+  target <- b$y$to(device = device)
+  loss <- nnf_mse_loss(output, target)
+  loss$backward()
+  opt$step()
+  loss$item()
+}
+
+valid_batch <- function(b) {
+  output <- cnn(b$x$to(device = device))
+  target <- b$y$to(device = device)
+  loss <- nnf_mse_loss(output, target)
+  loss$item()
+}
+```
+
+
+```{r}
+# Initialize parameters for the training loop 
+epoch <- 1
+trigger <- 0
+patience <- 3
+n_epochs <- 100
+last_loss <- 100
+
+
+# Training loop 
+
+while (epoch < n_epochs & trigger < patience) {
+  
+  # Training part 
+  cnn$train()
+  train_loss <- c()
+  
+  coro::loop(for (b in train_dl) {
+    loss <- train_batch(b)
+    train_loss <- c(train_loss, loss)
+  })
+  
+  cat(sprintf("epoch %0.3d/%0.3d - train - loss: %3.5f \n",
+              epoch, n_epochs, mean(train_loss)))
+  
+  # Evaluation part 
+  cnn$eval()
+  valid_loss <- c()
+  
+  coro::loop(for (b in test_dl) {
+    loss <- valid_batch(b)
+    valid_loss <- c(valid_loss, loss)
+  })
+  
+  current_loss <- mean(valid_loss)
+  if (current_loss > last_loss){trigger <- trigger + 1}
+  else{
+    trigger   <- 0
+    last_loss <- current_loss
+  }
+  
+  cat(sprintf("epoch %0.3d/%0.3d - valid - loss: %3.5f \n", epoch, n_epochs, current_loss))
+  
+  epoch <- epoch + 1 
+}
+```
+
+## Evaluation 
+
+Compute predicted parameters on test set.
+
+```{r}
+cnn$eval()
+pred <- vector(mode = "list", length = n_out)
+names(pred) <- names(true)
+
+# Compute predictions 
+coro::loop(for (b in test_dl) {
+  out <- cnn(b$x$to(device = device))
+  p <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
+  for (i in 1:n_out){pred[[i]] <- c(pred[[i]], p[i])}
+})
+```
+
+Now that you have the predicted parameters you can, for instance, 
+plot the predicted value by the neural network vs. the true values.
+
+```{r}
+par(mfrow=c(1,2))
+plot(true[[1]][test_indices], pred[[1]])
+abline(0, 1)
+plot(true[[2]][test_indices], pred[[2]])
+abline(0, 1)
+```
