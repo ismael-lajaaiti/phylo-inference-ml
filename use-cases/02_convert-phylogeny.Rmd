@@ -19,6 +19,10 @@ We go over the conversion toward each of these representations one by one.
 
 ## Set up 
 
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+```
+
 ```{r}
 source("R/phylo-inference-ml.R")
 set.seed(113)
@@ -59,7 +63,7 @@ cblv <- generate_encoding(phylo, max_taxa)
 Saving 
 
 ```{r}
-saveRDS(sumstat, "data/new-phylogeny-crbd-cblv.rds")
+saveRDS(cblv, "data/new-phylogeny-crbd-cblv.rds")
 ```
 
 
@@ -78,7 +82,7 @@ ltt <- generate_ltt_dataframe(phylo, taxa_range, true_params)$ltt
 Saving 
 
 ```{r}
-saveRDS(sumstat, "data/new-phylogeny-crbd-ltt.rds")
+saveRDS(ltt, "data/new-phylogeny-crbd-ltt.rds")
 ```
 
 

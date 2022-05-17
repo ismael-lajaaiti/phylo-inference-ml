@@ -7,6 +7,10 @@ editor_options:
 
 Set up.
 
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+```
+
 ```{r}
 source("R/phylo-inference-ml.R")
 model <- "crbd" # type of the model, either: "crbd" or "bisse"

@@ -11,6 +11,10 @@ and computed their summary statistics (`02_convert-phylogeny.Rmd`).
 
 ## Set up
 
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+```
+
 Data preparation: here we just need to scale the summary statistics,
 before giving them to the DNN,
 so that they are all put on an equal footing. 
