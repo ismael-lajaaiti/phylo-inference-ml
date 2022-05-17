@@ -39,7 +39,7 @@ sumstat <- generateSumStatFromPhylo(phylo, true_params)
 Saving
 
 ```{r}
-saveRDS(sumstat, "data/new-phylogenies-crbd-sumstat.rds")
+saveRDS(sumstat, "data/new-phylogeny-crbd-sumstat.rds")
 ```
 
 ## CBLV
@@ -59,7 +59,7 @@ cblv <- generate_encoding(phylo, max_taxa)
 Saving 
 
 ```{r}
-saveRDS(sumstat, "data/new-phylogenies-crbd-cblv.rds")
+saveRDS(sumstat, "data/new-phylogeny-crbd-cblv.rds")
 ```
 
 
@@ -78,7 +78,7 @@ ltt <- generate_ltt_dataframe(phylo, taxa_range, true_params)$ltt
 Saving 
 
 ```{r}
-saveRDS(sumstat, "data/new-phylogenies-crbd-ltt.rds")
+saveRDS(sumstat, "data/new-phylogeny-crbd-ltt.rds")
 ```
 
 
@@ -96,6 +96,6 @@ graphs <- generate_phylogeny_graph(phylo)
 Saving 
 
 ```{r}
-saveRDS(graphs, "data/new-phylogenies-crbd-graph.rds")
+saveRDS(graphs, "data/new-phylogeny-crbd-graph.rds")
 ```
 
