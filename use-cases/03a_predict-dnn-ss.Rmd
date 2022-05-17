@@ -1,0 +1,204 @@
+---
+title: "Predict phylogeny parameters with DNN and Summary statistics"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Before running this you should have 
+generated your phylogenies (`01_generate-phylogeny.Rmd`)
+and computed their summary statistics (`02_convert-phylogeny.Rmd`).
+
+## Set up
+
+Data preparation: here we just need to scale the summary statistics,
+before giving them to the DNN,
+so that they are all put on an equal footing. 
+
+```{r}
+source("R/phylo-inference-ml.R")
+set.seed(113)
+sumstat <- readRDS("data/new-phylogeny-crbd-sumstat.rds")
+true <- readRDS("data/new-phylogeny-crbd-true.rds")
+n_taxa <- c(100, 1000) # range of phylogeny size
+sumstat <- scale_summary_statistics(sumstat, c(100,1000), names(true))
+device = "cpu" # change if you want to compute GPUs
+```
+
+
+## Create datasets
+
+Define the of the training, validation and test sets. 
+
+```{r}
+# Define size of datasets.
+n_train    <- 90
+n_valid    <- 5
+n_test     <- 5
+batch_size <- 4
+
+# Pick the phylogenies randomly.
+ds <- convert_ss_dataframe_to_dataset(sumstat)
+train_indices <- sample(1:nrow(sumstat), n_train)
+not_train_indices <- setdiff(1:nrow(sumstat), train_indices)
+valid_indices <- sample(not_train_indices, n_valid)
+test_indices  <- setdiff(not_train_indices, valid_indices)
+
+# Create the datasets.
+train_ds <- ds(sumstat[train_indices, ], names(true), c())
+valid_ds <- ds(sumstat[valid_indices, ], names(true), c())
+test_ds  <- ds(sumstat[test_indices, ], names(true), c())
+
+# Create the dataloader.
+train_dl <- train_ds %>% dataloader(batch_size=batch_size, shuffle=TRUE)
+valid_dl <- valid_ds %>% dataloader(batch_size=batch_size, shuffle=FALSE)
+test_dl  <- test_ds  %>% dataloader(batch_size=1, shuffle=FALSE)
+```
+
+## Build the neural network 
+
+```{r}
+# Specify neural network parameters. 
+n_in      <- length(train_ds[1]$x) # number of neurons of the input layer 
+n_out     <- length(true)
+n_hidden  <- 100 # number of neurons in the hidden layers 
+p_dropout <- 0.01 # dropout probability 
+n_epochs  <- 100 # maximum number of epochs for the training 
+patience  <- 4 # patience of the early stopping 
+
+# Build the neural network.
+dnn.net <- nn_module(
+  
+  "ss-dnn", 
+  
+  initialize = function(){
+    self$fc1 <- nn_linear(in_features = n_in, out_features = n_hidden)
+    self$fc2 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+    self$fc3 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+    self$fc4 <- nn_linear(in_features = n_hidden, out_features = n_hidden)
+    self$fc5 <- nn_linear(in_features = n_hidden, out_features = n_out)
+  }, 
+  
+  forward = function(x){
+    x %>%
+      self$fc1() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      
+      self$fc2() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      
+      self$fc3() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      
+      self$fc4() %>%
+      nnf_relu() %>%
+      nnf_dropout(p = p_dropout) %>%
+      
+      self$fc5()
+  }
+)
+
+# Set up the neural network.
+dnn <- dnn.net() # create CNN
+dnn$to(device = device) # Move it to the choosen GPU
+opt <- optim_adam(params = dnn$parameters) # optimizer 
+```
+
+## Training 
+
+```{r}
+train_batch <- function(b){
+  opt$zero_grad()
+  output <- dnn(b$x$to(device = device))
+  target <- b$y$to(device = device)
+  loss <- nnf_mse_loss(output, target)
+  loss$backward()
+  opt$step()
+  loss$item()
+}
+
+valid_batch <- function(b) {
+  output <- dnn(b$x$to(device = device))
+  target <- b$y$to(device = device)
+  loss <- nnf_mse_loss(output, target)
+  loss$item()
+}
+```
+
+```{r}
+# Initialize parameters for the training loop.
+epoch     <- 1
+trigger   <- 0 
+last_loss <- 100
+
+
+# Training loop.
+while (epoch < n_epochs & trigger < patience) {
+  
+  # Training 
+  dnn$train()
+  train_loss <- c()
+  coro::loop(for (b in train_dl) { # loop over batches 
+    loss <- train_batch(b)
+    train_loss <- c(train_loss, loss)
+  })
+  
+  # Print Epoch and value of Loss function 
+  cat(sprintf("epoch %0.3d/%0.3d - train - loss: %3.5f \n",
+              epoch, n_epochs, mean(train_loss)))
+  
+  # Validation 
+  dnn$eval()
+  valid_loss <- c()
+  coro::loop(for (b in test_dl) { # loop over batches 
+    loss <- valid_batch(b)
+    valid_loss <- c(valid_loss, loss)
+  })
+  current_loss <- mean(valid_loss)
+  
+  # Early Stopping 
+  if (current_loss > last_loss){trigger <- trigger + 1} 
+  else{
+    trigger   <- 0
+    last_loss <- current_loss
+  }
+  
+  # Print Epoch and value of Loss function
+  cat(sprintf("epoch %0.3d/%0.3d - valid - loss: %3.5f \n",
+              epoch, n_epochs, current_loss))
+  
+  epoch <- epoch + 1 
+}
+```
+
+## Evaluation 
+
+Compute predicted parameters on test set.
+
+```{r}
+dnn$eval()
+pred <- vector(mode = "list", length = n_out)
+names(pred) <- names(true)
+
+# Compute predictions 
+coro::loop(for (b in test_dl) {
+  out <- dnn(b$x$to(device = device))
+  p <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU 
+  for (i in 1:n_out){pred[[i]] <- c(pred[[i]], p[i])}
+})
+```
+
+Now that you have the predicted parameters you can, for instance, 
+plot the predicted value by the neural network vs. the true values.
+
+```{r}
+par(mfrow=c(1,2))
+plot(true[[1]][test_indices], pred[[1]])
+abline(0, 1)
+plot(true[[2]][test_indices], pred[[2]])
+abline(0, 1)
+```
+
