@@ -57,16 +57,9 @@ get_node_df <- function(tree){
   return(df)
 }
 
-
 is_root <- function(tree, node){
   return(node == Ntip(tree) + 1)
 }
-
-
-is_tip <- function(tree, node){
-  return(node <= Ntip(tree) & node >= 1)
-}
-
 
 get_in.edge.length <- function(tree, node){
   if (is_root(tree, node)){length <- 0.} # no incoming edge if node is root 
@@ -79,7 +72,6 @@ get_in.edge.length <- function(tree, node){
   return(length)
 }
 
-
 get_mean.edge.length <- function(tree, node){
   
   # Node is root - mean of two outcoming edges 
@@ -91,7 +83,7 @@ get_mean.edge.length <- function(tree, node){
   }
   
   # Node is tip - unique incoming edge 
-  else if (is_tip(tree, node)){
+  else if (is_tip(node, tree)){
     mean <- get_in.edge.length(tree, node)
   }
   
@@ -110,7 +102,7 @@ get_mean.edge.length <- function(tree, node){
 get_clade.asym <- function(tree, node){
   
   # If node has no child, returns 0
-  if (is_tip(tree, node)){
+  if (is_tip(node, tree)){
     asym <- 0.
   }
   
@@ -126,7 +118,7 @@ get_clade.asym <- function(tree, node){
 
 
 get_time.asym <- function(tree, node){
-  if (is_tip(tree, node) | is_root(tree, node)){
+  if (is_tip(node, tree) | is_root(tree, node)){
     asym <- 0.
   }
   else{ 
@@ -140,7 +132,7 @@ get_time.asym <- function(tree, node){
 }
 
 get_node_state <- function(tree, i){
-  if (is_tip(tree, i)){state <- tree$tip.state[[i]]} # node is tip, save state
+  if (is_tip(i, tree)){state <- tree$tip.state[[i]]} # node is tip, save state
   else{state <- -1} # node isn't tip, state is unknown (i.e. -1)
   return(state)
 }

@@ -16,10 +16,8 @@
 #' @export
 #' @examples
 is_tip <- function(node, tree){
-  n_tip <- length(tree$tip.label)
-  return(node <= n_tip)
+  node <= length(tree$tip.label)
 }
-
 
 #' Get the two children of a node
 #'
