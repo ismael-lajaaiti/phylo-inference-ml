@@ -462,7 +462,7 @@ getPredsMLE <- function(type, trees){
       pred.param[[j]] <- c(pred.param[[j]], param)
     } 
     
-    progress(i, n_trees, progress.bar = TRUE, init = (i==1)) # print progression
+    #progress(i, n_trees, progress.bar = TRUE, init = (i==1)) # print progression
   }
   return(pred.param)
 }
@@ -965,6 +965,10 @@ generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   n_param    <- length(param.range) # number of parameters
   true.param <- vector(mode='list', length=n_param)
   names(true.param) <- c("lambda", "mu") 
+  if(ss_check){
+    ss.names <- create_ss.names() # summary statistic names 
+    df <- create_ss_dataframe(ss.names)
+  }
   
   cat("Generation of phylogenies...\n")
   
@@ -988,6 +992,7 @@ generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
     # If no checking or SS without NAs
     if (no_NA_ss || !ss_check){
       trees <- append(trees, list(tree)) # save tree
+      if (ss_check) {df <- add_row(df, ss)}
       for (i in 1:n_param){
         true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
       }
@@ -999,9 +1004,14 @@ generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   cat("\nGeneration of phylogenies... Done.")
   
   # Prepare output containing: trees (list), true param values (vector).
-  out <- list("trees"    = trees, 
-              "param"    = true.param)
-  
+  if (ss_check){
+    out <- list("trees"    = trees, 
+                "param"    = true.param, 
+                "ss"       = df)
+  } else {
+    out <- list("trees"    = trees, 
+                "param"    = true.param)
+  }
   return(out)
 }
 
@@ -1014,6 +1024,10 @@ generatePhyloBiSSE <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
   name.param <- c("lambda0", "lambda1", "mu0", "mu1", "q01", "q10") 
   true.param <- vector(mode='list', length=6)
   names(true.param) <- name.param
+  if(ss_check){
+    ss.names <- create_ss.names() # summary statistic names 
+    df <- create_ss_dataframe(ss.names)
+  }
   
   while(length(trees) < n_trees){
     vec.param <- drawRateBiSSE(param.range) # draw randomly param. values
@@ -1037,16 +1051,23 @@ generatePhyloBiSSE <- function(n_trees, n_taxa, param.range, ss_check = TRUE){
     
     if (no_NA_ss || !ss_check){
         trees <- append(trees, list(tree))                    # save tree
+        if (ss_check) {df <- add_row(df, ss)}
         for (i in 1:6){
           true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
         }
-        progress(length(trees), n_trees, progress.bar = TRUE, # print
-                 init = (length(trees)==1))                   # progression
+        #progress(length(trees), n_trees, progress.bar = TRUE, # print
+        #         init = (length(trees)==1))                   # progression
       }
     }
   
-  out <- list("trees"    = trees, 
-              "param"    = true.param)
+  if (ss_check){
+    out <- list("trees"    = trees, 
+                "param"    = true.param, 
+                "ss"       = df)
+  } else {
+    out <- list("trees"    = trees, 
+                "param"    = true.param)
+  }
   
   return(out)
 }

@@ -8,12 +8,14 @@
 #### Import libraries #### 
 
 source("infer-general-functions.R")
+library(parallel)
+library(stringr)
 
 #### end ####
 
 
-model       <- "crbd"      # type of the model, either: "crbd" or "bisse"
-n_trees     <- 10009      # number of trees to generate
+model       <- "bisse"      # type of the model, either: "crbd" or "bisse"
+n_trees     <- 100000      # number of trees to generate
 n_taxa      <- c(100,1000) # range size of the generated phylogenies
 compute_mle <- TRUE        # should mle predictions be computed and saved 
 
@@ -43,19 +45,48 @@ param.range <- param.range.list[[model]]
 #### Generate phylogenies - Compute Sum. Stat. & MLE ####
 
 # Generating and saving phylogenies
-out <- generatePhylo(model, n_trees, n_taxa, param.range)
-savePhylogeny(out$trees, out$param, n_trees, n_taxa, param.range) # save
 
+n_core <- 10
+n_rep <- 10
+n_trees_per_rep <- 50000
 
-# Computing summary statistics 
-df.ss <- generateSumStatFromPhylo(out$trees, out$param)      # compute
-saveSummaryStatistics(df.ss, n_trees, n_taxa, param.range) # save
+r <- mclapply(1:n_rep, function(i){
+  out <- generatePhylo(model, n_trees_per_rep, n_taxa, param.range)
+  print("Phylogenies generated.")
+  mle.param <- getPredsMLE(model, out$trees)
+  print("MLE predictions computed.")
+  list(out=out, mle=mle.param)
+}, mc.cores=n_core)
 
-
-# Computing Maximum Likelihood Rate Estimations
-if (compute_mle){
-  pred.param <- getPredsMLE(model, out$trees)
-  savePredsMLE(pred.param, n_trees, n_taxa, param.range)
+for (i in 1:n_rep){
+  out <- r[[i]]$out
+  mle <- r[[i]]$mle
+  ss <- out$ss
+  trees <- out$trees
+  params <- out$param
+  trees_params <- list(trees=trees, params=params)
+  fname_prefix <- paste("trees-dataset/bisse-n", n_trees_per_rep, sep="")
+  i_pad <- str_pad(i, 2, pad="0") # ex: 2 -> 02 | 13 -> 13 
+  saveRDS(trees_params, paste(fname_prefix, "-trees-and-params", i_pad,".rds",sep=""))
+  saveRDS(ss, paste(fname_prefix, "-sumstat", i_pad,".rds",sep=""))
+  saveRDS(mle, paste(fname_prefix, "-predmle", i_pad,".rds",sep=""))
 }
 
-#### end ####
+
+
+# 
+# savePhylogeny(out$trees, out$param, n_trees, n_taxa, param.range) # save
+# 
+# 
+# # Computing summary statistics 
+# df.ss <- generateSumStatFromPhylo(out$trees, out$param)      # compute
+# saveSummaryStatistics(df.ss, n_trees, n_taxa, param.range) # save
+# 
+# 
+# # Computing Maximum Likelihood Rate Estimations
+# if (compute_mle){
+#   pred.param <- getPredsMLE(model, out$trees)
+#   savePredsMLE(pred.param, n_trees, n_taxa, param.range)
+# }
+# 
+# #### end ####
