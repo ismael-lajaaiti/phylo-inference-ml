@@ -263,7 +263,7 @@ generate_encoding_bisse <- function(trees, n_taxa){
     as.matrix() 
   
   cat("\nComputing encoding vectors... Done.\n")
-  
+  matrix.encode
 }
 
 
