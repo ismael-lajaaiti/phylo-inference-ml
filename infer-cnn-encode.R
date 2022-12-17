@@ -1,181 +1,86 @@
 # CNN with CBLV encoding
 # ----------------------
 
+# Dependecies.
 source("infer-general-functions.R")
 source("neural-network-functions.R")
 
-# Defining global parameters
+# Set-up.
+gpu_id <- "cuda:1"
+nn_type <- "cnn-encode"
+diversification <- "bisse"
+range_tree_size <- c(100, 1000)
 
-ss_check <- TRUE
-device <- "cuda:1" # GPU where to run computations
-nn_type <- "cnn-encode" # type of the model: Convolutional Neural Network w/
-# graph encoding
-model_type <- "bisse"
+# Read and prepare input data.
+dir <- "bisse-1e6-phylogenies/"
+true_param <- readRDS(str_c(dir, "raw/bisse-true-params-all.rds"))
+input_cblv <- readRDS(str_c(dir, "formatted/cblv/bisse-cblv-all.rds"))
+ds <- convert_encode_to_dataset(input_cblv, true_param)
+indices_list <- readRDS(str_c(dir, "indices-1e6-phylogenies.rds"))
+train_indices <- indices_list$train
+valid_indices <- indices_list$valid
+test_indices <- indices_list$test
 
-n_trees <- 100000 # total number of trees (train + valid + test)
-n_taxa <- c(100, 1000) # size of the trees
-
-# Parameter range of Constant Rate Birth Death model
-param.range.crbd <- list(
-    "lambda" = c(0.1, 1.), # speciation rate
-    "epsilon" = c(0., 0.9)
-) # extinction rate
-
-# Parameter range of BiSSE model
-param.range.bisse <- list(
-    "lambda" = c(0.1, 1.), # speciation rate
-    "q" = c(.01, .1)
-) # transition rate 0 <-> 1
-
-param.range.list <- list(
-    "crbd" = param.range.crbd,
-    "bisse" = param.range.bisse
+train_ds <- ds(
+    input_cblv[, train_indices],
+    extract_elements(true_param, train_indices)
 )
-param.range <- param.range.list[[model_type]]
+valid_ds <- ds(
+    input_cblv[, valid_indices],
+    extract_elements(true_param, valid_indices)
+)
+test_ds <- ds(
+    input_cblv[, test_indices],
+    extract_elements(true_param, test_indices)
+)
 
-# Generate the trees and save
-out <- readPhylogeny(n_trees, n_taxa, param.range, load_trees = TRUE)
-true.param <- out$param # extract true values of the parameters
-trees <- out$trees
-if (model_type == "bisse") {
-    true.param <- true.param[-c(2, 3, 4, 6)]
-}
-
-
-
-# Create the corresponding encoding of the trees
-# mat.encode <- generate_encoding(trees, n_taxa)
-fname.encode <- getSaveName(n_trees, n_taxa, param.range)$encode
-mat.encode <- readRDS(fname.encode)
-
-mat.encode.rd <- mat.encode
-mat.encode.rd <- randomize_tips(mat.encode, trees)
-
-randomize_tips <- function(mat.encode.rd, trees) {
-    for (i in 1:n_trees) {
-        n_tips <- trees[[i]]$Nnode + 1
-        end <- 2000 + n_tips
-        mat.encode.rd[2000:end, i] <- sample(mat.encode.rd[2000:end, i])
-
-        progress(i, max.value = n_trees, progress.bar = TRUE, init = (i == 1))
-    }
-
-    return(mat.encode.rd)
-}
-
-replace_values <- function(vec, old_val, new_val) {
-    n <- length(vec)
-    for (i in 1:n) {
-        if (vec[i] == old_val) {
-            vec[i] <- new_val
-        }
-    }
-    return(vec)
-}
-
-"Convert tip states as follow: 0 -> -1, 1 -> 1."
-relabel_tips <- function(mat, trees) {
-    for (i in 1:length(trees)) {
-        n_tips <- trees[[i]]$Nnode + 1
-        mat[2000:(2000 + n_tips), i] <- replace_values(mat[2000:(2000 + n_tips), i], 0, -1)
-    }
-    return(mat)
-}
-
-mat.encode <- readRDS(paste("data-from-7/bisse-n20000-cblv",
-    str_pad(1, 2, pad = "0"), ".rds",
-    sep = ""
-))
-true.params <- list("lambda" = NULL, "q" = NULL)
-out <- readRDS(paste("data-from-7/bisse-n20000-trees-and-params",
-    str_pad(1, 2, pad = "0"), ".rds",
-    sep = ""
-))
-params <- out$params
-true.params$lambda <- c(true.params$lambda, params$lambda0)
-true.params$q <- c(true.params$q, params$q01)
-trees <- out$trees
-mat.encode <- relabel_tips(mat.encode, trees)
-
-for (i in 2:50) {
-    print(i)
-    mat <- readRDS(paste("data-from-7/bisse-n20000-cblv",
-        str_pad(i, 2, pad = "0"), ".rds",
-        sep = ""
-    ))
-    out <- readRDS(paste("data-from-7/bisse-n20000-trees-and-params",
-        str_pad(i, 2, pad = "0"), ".rds",
-        sep = ""
-    ))
-    params <- out$params
-    true.params$lambda <- c(true.params$lambda, params$lambda0)
-    true.params$q <- c(true.params$q, params$q01)
-    trees <- out$trees
-    mat <- relabel_tips(mat, trees)
-    mat.encode <- cbind(mat.encode, mat)
-}
-
-mat.encode <- relabel_tips(mat.encode, trees)
-
-true.param <- true.params
-ds.encode <- convert_encode_to_dataset(mat.encode, true.param)
-
-# Parameters of the NN's training
-n_train <- 900000
-n_valid <- 50000
-n_test <- 50000
-n_epochs <- 100
 batch_size <- 64
-patience <- 2
-
-# Creation of the train, valid and test dataset
-train_indices <- sample(1:n_trees, n_train)
-not_train_indices <- setdiff(1:n_trees, train_indices)
-valid_indices <- sample(not_train_indices, n_valid)
-test_indices <- setdiff(not_train_indices, valid_indices)
-
-# Creation of datasets
-train_ds <- ds.encode(
-    mat.encode[, train_indices],
-    extract_elements(true.param, train_indices)
-)
-valid_ds <- ds.encode(
-    mat.encode[, valid_indices],
-    extract_elements(true.param, valid_indices)
-)
-test_ds <- ds.encode(
-    mat.encode[, test_indices],
-    extract_elements(true.param, test_indices)
-)
-
-
-# Creation of the dataloader
 train_dl <- train_ds %>% dataloader(batch_size = batch_size, shuffle = TRUE)
 valid_dl <- valid_ds %>% dataloader(batch_size = batch_size, shuffle = FALSE)
 test_dl <- test_ds %>% dataloader(batch_size = 1, shuffle = FALSE)
 
-
+# Prepare neural network.
+n_epochs <- 100
+patience <- 2
 n_hidden <- 8
 n_layer <- 4
 ker_size <- 10
-n_input <- 3 * max(n_taxa)
-n_out <- length(param.range)
-p_dropout <- 0.01
+n_input <- 3 * max(range_tree_size)
+n_out <- 2
+p_dropout <- 0.0
 
-
-# Build the CNN
-
-cnn.net <- nn_module(
-
+create_cnn <- nn_module(
     "corr-cnn",
     initialize = function(n_input, n_out, n_hidden, n_layer, ker_size) {
-        self$conv1 <- nn_conv1d(in_channels = 1, out_channels = n_hidden, kernel_size = ker_size)
-        self$conv2 <- nn_conv1d(in_channels = n_hidden, out_channels = 2 * n_hidden, kernel_size = ker_size)
-        self$conv3 <- nn_conv1d(in_channels = 2 * n_hidden, out_channels = 4 * n_hidden, kernel_size = ker_size)
-        self$conv4 <- nn_conv1d(in_channels = 4 * n_hidden, out_channels = 8 * n_hidden, kernel_size = ker_size)
+        self$conv1 <- nn_conv1d(
+            in_channels = 1,
+            out_channels = n_hidden,
+            kernel_size = ker_size
+        )
+        self$conv2 <- nn_conv1d(
+            in_channels = n_hidden,
+            out_channels = 2 * n_hidden,
+            kernel_size = ker_size
+        )
+        self$conv3 <- nn_conv1d(
+            in_channels = 2 * n_hidden,
+            out_channels = 4 * n_hidden,
+            kernel_size = ker_size
+        )
+        self$conv4 <- nn_conv1d(
+            in_channels = 4 * n_hidden,
+            out_channels = 8 * n_hidden,
+            kernel_size = ker_size
+        )
         n_flatten <- compute_dim_ouput_flatten_cnn(n_input, n_layer, ker_size)
-        self$fc1 <- nn_linear(in_features = n_flatten * (8 * n_hidden), out_features = 100)
-        self$fc2 <- nn_linear(in_features = 100, out_features = n_out)
+        self$fc1 <- nn_linear(
+            in_features = n_flatten * (8 * n_hidden),
+            out_features = 100
+        )
+        self$fc2 <- nn_linear(
+            in_features = 100,
+            out_features = n_out
+        )
     },
     forward = function(x) {
         x %>%
@@ -203,17 +108,14 @@ cnn.net <- nn_module(
     }
 )
 
-cnn <- cnn.net(n_input, n_out, n_hidden, n_layer, ker_size) # create CNN
-cnn$to(device = device) # Move it to the choosen GPU
-
-# Prepare training
-
+cnn <- create_cnn(n_input, n_out, n_hidden, n_layer, ker_size)
+cnn$to(device = gpu_id)
 opt <- optim_adam(params = cnn$parameters) # optimizer
 
 train_batch <- function(b) {
     opt$zero_grad()
-    output <- cnn(b$x$to(device = device))
-    target <- b$y$to(device = device)
+    output <- cnn(b$x$to(device = gpu_id))
+    target <- b$y$to(device = gpu_id)
     loss <- nnf_mse_loss(output, target)
     loss$backward()
     opt$step()
@@ -221,22 +123,18 @@ train_batch <- function(b) {
 }
 
 valid_batch <- function(b) {
-    output <- cnn(b$x$to(device = device))
-    target <- b$y$to(device = device)
+    output <- cnn(b$x$to(device = gpu_id))
+    target <- b$y$to(device = gpu_id)
     loss <- nnf_mse_loss(output, target)
     loss$item()
 }
 
-
-# Initialize parameters for the training loop
+# Training.
 epoch <- 1
 trigger <- 0
 last_loss <- 100
 
-
-# Training loop
-
-while (epoch < n_epochs & trigger < patience) {
+while (epoch < n_epochs && trigger < patience) {
 
     # Training part
     cnn$train()
@@ -269,7 +167,10 @@ while (epoch < n_epochs & trigger < patience) {
         last_loss <- current_loss
     }
 
-    cat(sprintf("epoch %0.3d/%0.3d - valid - loss: %3.5f \n", epoch, n_epochs, current_loss))
+    cat(sprintf(
+        "epoch %0.3d/%0.3d - valid - loss: %3.5f \n", epoch, n_epochs,
+        current_loss
+    ))
 
     epoch <- epoch + 1
 }
@@ -278,7 +179,7 @@ while (epoch < n_epochs & trigger < patience) {
 # Saving model for reproducibility
 
 # cat("\nSaving model...")
-# fname.model <- get_model_save_name(nn_type, n_trees, n_taxa, lambda_range, epsilon_range,
+# fname.model <- get_model_save_name(nn_type, n_trees, range_tree-size, lambda_range, epsilon_range,
 #                                   n_layer, n_hidden, n_train, ker_size)
 # torch_save(cnn, fname.model)
 # cat(paste("\n", fname.model, " saved.", sep = ""))
@@ -287,66 +188,14 @@ while (epoch < n_epochs & trigger < patience) {
 # Evaluation of the predictions of the RNN w/ test set
 
 cnn$eval()
-nn.pred <- vector(mode = "list", length = n_out)
-names(nn.pred) <- names(true.param)
-
-# Compute predictions
+nn_predictions <- vector(mode = "list", length = n_out)
+names(nn_predictions) <- names(true_param)
 coro::loop(for (b in test_dl) {
-    out <- cnn(b$x$to(device = device))
-    pred <- as.numeric(out$to(device = "cpu")) # move the tensor to CPU
-    # true <- as.numeric(b$y)
+    out <- cnn(b$x$to(device = gpu_id))
+    pred <- as.numeric(out$to(device = "cpu"))
     for (i in 1:n_out) {
-        nn.pred[[i]] <- c(nn.pred[[i]], pred[i])
+        nn_predictions[[i]] <- c(nn_predictions[[i]], pred[i])
     }
 })
 
-# Prepare plot
-name.param <- c("lambda", "q")
-
-# Save neural network predictions
-# save_predictions(pred.list, true.list, nn_type, n_trees, n_taxa,
-#                 lambda_range, epsilon_range, n_test, n_layer,
-#                 n_hidden, n_train, ker_size)
-
-mle.pred <- list("lambda" = NULL, "q" = NULL)
-
-for (i in 1:50) {
-    mle <- readRDS(paste("data-from-7/bisse-n20000-predmle",
-        str_pad(i, 2, pad = "0"), ".rds",
-        sep = ""
-    ))
-    mle.pred$lambda <- c(mle.pred$lambda, mle$lambda0)
-    mle.pred$q <- c(mle.pred$q, mle$q01)
-}
-
-# Plot Predictions
-true.param.test <- as.list(as.data.frame(do.call(cbind, true.param))[test_indices, ])
-fname.mle <- getSaveName(n_trees, n_taxa, param.range)$mle
-mle.pred <- readRDS(fname.mle)
-mle.pred.test <- as.list(as.data.frame(do.call(cbind, mle.pred))[test_indices, ])
-if (model_type == "bisse") {
-    mle.pred.test <- mle.pred.test[-c(2, 3, 4, 6)]
-}
-pred.param.test <- list("mle" = mle.pred.test)
-pred.param.test[["cnn_cblv6"]] <- nn.pred
-if (model_type == "bisse") {
-    param.range.ajusted <- list("lambda" = c(0.1, 1.), "q" = c(0., .1))
-    param.range.in <- list("lambda" = c(0.2, .9), "q" = c(.02, .09))
-} else {
-    param.range.ajusted <- list("lambda" = c(0.1, 1.), "q" = c(0., 1.))
-    param.range.in <- list("lambda" = c(0.2, .9), "q" = c(0., .8))
-}
-
-plot_pred_vs_true_all(pred.param.test, true.param.test, name.param, param.range.ajusted,
-    param.range.in,
-    fname = "",
-    save = FALSE
-)
-
-reord_names <- c("mle", "cnn_cblv", "dnn-ss", "cnn-ltt", "rnn-ltt", "gnn-phylo")
-plot_error_barplot_all(pred.param.test, true.param.test, param.range.in, name.param,
-    save = T, fname = "test"
-)
-
-# plot_bars_mle_vs_nn(pred.list.all, true.list, nn_type, name.list, save = TRUE, n_trees, n_taxa,
-#                    lambda_range, epsilon_range, n_test, n_layer, n_hidden, n_train, ker_size)
+saveRDS(str_c(dir, "predictions/cnn-cblv-predictions.rds"))
