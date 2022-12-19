@@ -1,17 +1,17 @@
 # CNN with CBLV encoding
-# ----------------------
 
-# Dependecies.
-source("infer-general-functions.R")
-source("neural-network-functions.R")
+#### Dependecies ####
+source("R/libraries.R")
+source("R/neural-network-functions.R")
+source("R/utils.R")
 
-# Set-up.
+#### Set-up ####
 gpu_id <- "cuda:1"
 nn_type <- "cnn-encode"
 diversification <- "bisse"
 range_tree_size <- c(100, 1000)
 
-# Read and prepare input data.
+#### Read and prepare input data ####
 dir <- "bisse-1e6-phylogenies/"
 true_param <- readRDS(str_c(dir, "raw/bisse-true-params-all.rds"))
 input_cblv <- readRDS(str_c(dir, "formatted/cblv/bisse-cblv-all.rds"))
@@ -40,7 +40,7 @@ valid_dl <- valid_ds %>% dataloader(batch_size = batch_size, shuffle = FALSE)
 test_dl <- test_ds %>% dataloader(batch_size = 1, shuffle = FALSE)
 
 # Prepare neural network.
-n_epochs <- 100
+epoch_max <- 50
 patience <- 2
 n_hidden <- 8
 n_layer <- 4
@@ -112,86 +112,59 @@ cnn <- create_cnn(n_input, n_out, n_hidden, n_layer, ker_size)
 cnn$to(device = gpu_id)
 opt <- optim_adam(params = cnn$parameters) # optimizer
 
-train_batch <- function(b) {
-    opt$zero_grad()
-    output <- cnn(b$x$to(device = gpu_id))
-    target <- b$y$to(device = gpu_id)
-    loss <- nnf_mse_loss(output, target)
-    loss$backward()
-    opt$step()
-    loss$item()
-}
-
-valid_batch <- function(b) {
-    output <- cnn(b$x$to(device = gpu_id))
-    target <- b$y$to(device = gpu_id)
-    loss <- nnf_mse_loss(output, target)
-    loss$item()
-}
-
-# Training.
+#### Training loop ####
 epoch <- 1
 trigger <- 0
-last_loss <- 100
+last_loss <- Inf
+best_cnn <- cnn
 
-while (epoch < n_epochs && trigger < patience) {
-
-    # Training part
+while (epoch < epoch_max && trigger < patience) {
+    # Training.
     cnn$train()
     train_loss <- c()
-
     coro::loop(for (b in train_dl) {
-        loss <- train_batch(b)
+        loss <- train_step(cnn, opt, b, gpu_id)
         train_loss <- c(train_loss, loss)
     })
-
-    cat(sprintf(
-        "epoch %0.3d/%0.3d - train - loss: %3.5f \n",
-        epoch, n_epochs, mean(train_loss)
+    cat(str_c(
+        sprintf(
+            "Epoch %0.2d/%0.2d - Train loss: ", epoch, epoch_max
+        ),
+        format(mean(train_loss), scientific = TRUE, digits = 3),
+        "\n"
     ))
 
-    # Evaluation part
+    # Validation.
     cnn$eval()
     valid_loss <- c()
-
     coro::loop(for (b in test_dl) {
-        loss <- valid_batch(b)
+        loss <- valid_step(cnn, b, gpu_id)
         valid_loss <- c(valid_loss, loss)
     })
-
     current_loss <- mean(valid_loss)
     if (current_loss > last_loss) {
         trigger <- trigger + 1
     } else {
         trigger <- 0
         last_loss <- current_loss
+        best_cnn <- cnn
     }
-
-    cat(sprintf(
-        "epoch %0.3d/%0.3d - valid - loss: %3.5f \n", epoch, n_epochs,
-        current_loss
+    cat(str_c(
+        sprintf(
+            "Epoch %0.2d/%0.2d - Valid loss: ", epoch, epoch_max
+        ),
+        format(current_loss, scientific = TRUE, digits = 3),
+        "\n"
     ))
-
     epoch <- epoch + 1
 }
 
-
-# Saving model for reproducibility
-
-# cat("\nSaving model...")
-# fname.model <- get_model_save_name(nn_type, n_trees, range_tree-size, lambda_range, epsilon_range,
-#                                   n_layer, n_hidden, n_train, ker_size)
-# torch_save(cnn, fname.model)
-# cat(paste("\n", fname.model, " saved.", sep = ""))
-# cat("\nSaving model... Done.")
-
-# Evaluation of the predictions of the RNN w/ test set
-
-cnn$eval()
+#### Evaluation on the test set ####
+best_cnn$eval()
 nn_predictions <- vector(mode = "list", length = n_out)
 names(nn_predictions) <- names(true_param)
 coro::loop(for (b in test_dl) {
-    out <- cnn(b$x$to(device = gpu_id))
+    out <- best_cnn(b$x$to(device = gpu_id))
     pred <- as.numeric(out$to(device = "cpu"))
     for (i in 1:n_out) {
         nn_predictions[[i]] <- c(nn_predictions[[i]], pred[i])
