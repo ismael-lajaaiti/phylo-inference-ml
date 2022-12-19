@@ -7,7 +7,6 @@ source("R/utils.R")
 
 #### Set-up ####
 gpu_id <- "cuda:1"
-nn_type <- "cnn-encode"
 diversification <- "bisse"
 range_tree_size <- c(100, 1000)
 
@@ -39,7 +38,7 @@ train_dl <- train_ds %>% dataloader(batch_size = batch_size, shuffle = TRUE)
 valid_dl <- valid_ds %>% dataloader(batch_size = batch_size, shuffle = FALSE)
 test_dl <- test_ds %>% dataloader(batch_size = 1, shuffle = FALSE)
 
-# Prepare neural network.
+#### Prepare neural network ####
 epoch_max <- 50
 patience <- 2
 n_hidden <- 8
@@ -50,8 +49,7 @@ n_out <- 2
 p_dropout <- 0.0
 
 create_cnn <- nn_module(
-    "corr-cnn",
-    initialize = function(n_input, n_out, n_hidden, n_layer, ker_size) {
+    initialize = function() {
         self$conv1 <- nn_conv1d(
             in_channels = 1,
             out_channels = n_hidden,
@@ -108,67 +106,19 @@ create_cnn <- nn_module(
     }
 )
 
-cnn <- create_cnn(n_input, n_out, n_hidden, n_layer, ker_size)
-cnn$to(device = gpu_id)
-opt <- optim_adam(params = cnn$parameters) # optimizer
-
 #### Training loop ####
-epoch <- 1
-trigger <- 0
-last_loss <- Inf
-best_cnn <- cnn
-
-while (epoch < epoch_max && trigger < patience) {
-    # Training.
-    cnn$train()
-    train_loss <- c()
-    coro::loop(for (b in train_dl) {
-        loss <- train_step(cnn, opt, b, gpu_id)
-        train_loss <- c(train_loss, loss)
-    })
-    cat(str_c(
-        sprintf(
-            "Epoch %0.2d/%0.2d - Train loss: ", epoch, epoch_max
-        ),
-        format(mean(train_loss), scientific = TRUE, digits = 3),
-        "\n"
-    ))
-
-    # Validation.
-    cnn$eval()
-    valid_loss <- c()
-    coro::loop(for (b in test_dl) {
-        loss <- valid_step(cnn, b, gpu_id)
-        valid_loss <- c(valid_loss, loss)
-    })
-    current_loss <- mean(valid_loss)
-    if (current_loss > last_loss) {
-        trigger <- trigger + 1
-    } else {
-        trigger <- 0
-        last_loss <- current_loss
-        best_cnn <- cnn
-    }
-    cat(str_c(
-        sprintf(
-            "Epoch %0.2d/%0.2d - Valid loss: ", epoch, epoch_max
-        ),
-        format(current_loss, scientific = TRUE, digits = 3),
-        "\n"
-    ))
-    epoch <- epoch + 1
-}
+cnn_trained <- train_neural_network(create_cnn, gpu_id, train_dl, valid_dl)
 
 #### Evaluation on the test set ####
-best_cnn$eval()
-nn_predictions <- vector(mode = "list", length = n_out)
-names(nn_predictions) <- names(true_param)
+cnn$eval()
+cnn_predictions <- vector(mode = "list", length = n_out)
+names(cnn_predictions) <- names(true_param)
 coro::loop(for (b in test_dl) {
-    out <- best_cnn(b$x$to(device = gpu_id))
+    out <- cnn(b$x$to(device = gpu_id))
     pred <- as.numeric(out$to(device = "cpu"))
     for (i in 1:n_out) {
-        nn_predictions[[i]] <- c(nn_predictions[[i]], pred[i])
+        cnn_predictions[[i]] <- c(cnn_predictions[[i]], pred[i])
     }
 })
 
-saveRDS(str_c(dir, "predictions/cnn-cblv-predictions.rds"))
+saveRDS(nn_predictions, str_c(dir, "predictions/cnn-cblv-predictions.rds"))
