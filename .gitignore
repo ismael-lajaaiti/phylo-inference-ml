@@ -38,9 +38,9 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-figures
-trees-dataset
-neural-networks-models
-neural-networks-predictions
-bisse-1e6-phylogenies
-data
+figures/
+trees-dataset/
+neural-networks-models/
+neural-networks-predictions/
+data/
+*.rds
