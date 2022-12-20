@@ -110,15 +110,14 @@ create_cnn <- nn_module(
 cnn_trained <- train_neural_network(create_cnn, gpu_id, train_dl, valid_dl)
 
 #### Evaluation on the test set ####
-cnn$eval()
 cnn_predictions <- vector(mode = "list", length = n_out)
 names(cnn_predictions) <- names(true_param)
 coro::loop(for (b in test_dl) {
-    out <- cnn(b$x$to(device = gpu_id))
+    out <- cnn_trained(b$x$to(device = gpu_id))
     pred <- as.numeric(out$to(device = "cpu"))
     for (i in 1:n_out) {
         cnn_predictions[[i]] <- c(cnn_predictions[[i]], pred[i])
     }
 })
 
-saveRDS(nn_predictions, str_c(dir, "predictions/cnn-cblv-predictions.rds"))
+saveRDS(cnn_predictions, str_c(dir, "predictions/cnn-cblv-predictions.rds"))
