@@ -87,7 +87,12 @@ get_predictions <- function(nn_trained,
         }
     })
     if (save) {
-        fname <- stringr::str_c(dir, "predictions/cnn-cblv-predictions.rds")
+        fname <- stringr::str_c(
+            dir,
+            "predictions/",
+            model_type,
+            "-predictions.rds"
+        )
         if (file.exists(fname)) {
             error_msg <- stringr::str_c(
                 "File ",
@@ -196,11 +201,7 @@ convert_ltt_to_dataset <- function(ltt_df, true_param, nn_type) {
 convert_ltt_to_dataset_cnn <- function(ltt_df, true_param) {
     torch::dataset(
         initialize = function(ltt_df, true_param) {
-            ltt_df[is.na(ltt_df)] <- 0
-            array_ltt <- torch::torch_tensor(
-                as.matrix(ltt_df),
-                dtype = torch::torch_float16()
-            )
+            array_ltt <- torch::torch_tensor(as.matrix(ltt_df))
             self$x <- array_ltt
             self$y <- torch::torch_tensor(do.call(cbind, true_param))
         },
@@ -218,7 +219,6 @@ convert_ltt_to_dataset_cnn <- function(ltt_df, true_param) {
 convert_ltt_to_dataset_rnn <- function(ltt_df, true_param) {
     torch::dataset(
         initialize = function(ltt_df, true_param) {
-            ltt_df[is.na(ltt_df)] <- 0
             array_ltt <- torch::torch_tensor(as.matrix(ltt_df))
             self$x <- array_ltt
             self$y <- torch::torch_tensor(do.call(cbind, true_param))
