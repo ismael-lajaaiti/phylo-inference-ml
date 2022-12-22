@@ -219,8 +219,8 @@ convert_ltt_to_dataset_cnn <- function(ltt_df, true_param) {
 convert_ltt_to_dataset_rnn <- function(ltt_df, true_param) {
     torch::dataset(
         initialize = function(ltt_df, true_param) {
-            array_ltt <- torch::torch_tensor(as.matrix(ltt_df))
-            self$x <- array_ltt
+            tensor_ltt <- torch::torch_tensor(as.matrix(ltt_df))
+            self$x <- tensor_ltt$unsqueeze(3)
             self$y <- torch::torch_tensor(do.call(cbind, true_param))
         },
         .getitem = function(i) {
