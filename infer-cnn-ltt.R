@@ -6,7 +6,7 @@ source("R/neural-network-functions.R")
 source("R/utils.R")
 
 #### Set-up ####
-gpu_id <- "cuda:1"
+gpu_id <- "cuda:3"
 diversification <- "bisse"
 range_tree_size <- c(100, 1000)
 
@@ -23,10 +23,9 @@ sliced_true_param <- lapply(
     indices_list,
     function(x) extract_elements(true_param, x)
 )
-tensor_ltt <- torch::torch_tensor(as.matrix(input_ltt))
-train_ds <- ds(tensor_ltt[, train_indices[1:500000]], sliced_true_param$train)
-valid_ds <- ds(tensor_ltt[, valid_indices], sliced_true_param$valid)
-test_ds <- ds(tensor_ltt[, test_indices], sliced_true_param$test)
+train_ds <- ds(input_ltt[, train_indices], sliced_true_param$train)
+valid_ds <- ds(input_ltt[, valid_indices], sliced_true_param$valid)
+test_ds <- ds(input_ltt[, test_indices], sliced_true_param$test)
 batch_size <- 64
 train_dl <- train_ds %>% dataloader(batch_size = batch_size, shuffle = TRUE)
 valid_dl <- valid_ds %>% dataloader(batch_size = batch_size, shuffle = FALSE)
@@ -101,6 +100,7 @@ cnn_predictions <- get_predictions(
     test_dl,
     true_param,
     "cnn-ltt",
+    gpu_id,
     save = TRUE,
     verbose = TRUE
 )
