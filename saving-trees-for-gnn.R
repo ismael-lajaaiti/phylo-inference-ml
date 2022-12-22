@@ -1,9 +1,7 @@
-# Libraries and Sources
 source("R/libraries.R")
 source("R/phylogeny-properties.R")
 source("R/phylogeny-graph-data.R")
 source("infer-general-functions.R")
-
 
 n_core <- 10
 n_rep <- 50
@@ -14,7 +12,7 @@ df_list <- mclapply(1:n_rep, function(i) {
         sep = ""
     ))
     tree_list <- out$trees
-    n_tree <- 10 # length(tree_list)
+    n_tree <- length(tree_list)
     list_tree_df <- list()
     for (k in 1:n_tree) {
         tree <- tree_list[[k]]
@@ -23,12 +21,10 @@ df_list <- mclapply(1:n_rep, function(i) {
         df <- list("node" = node, "edge" = edge)
         list_tree_df[[k]] <- df
     }
+    list_tree_df
 }, mc.cores = n_core)
 
-# Saving
-dir <- "trees-dataset"
-fname <- get_backbone_save_name(n_tree, n_taxa, param.range) # save name for file
-fname <- paste(fname, "sscheck", ss_check, "df.rds", sep = "-")
-fname <- paste(dir, fname, sep = "/")
-saveRDS(list.df.tree, fname) # saving file
-cat(paste(fname, " saved.\n"))
+# [[1]]: [[1]] df1 [[2]] df2 -> [[1]] df1 [[2]] df2
+df_list_formatted <- unlist(df_list, recursive = FALSE)
+dir_gnn <- "bisse-1e6-phylogenies/formatted/graph/"
+saveRDS(df_list_formatted, str_c(dir_gnn, "bisse-node-edge-df-all.rds"))
