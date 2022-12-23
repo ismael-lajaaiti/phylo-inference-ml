@@ -837,17 +837,18 @@ divide_ltt.df_points <- function(ltt.df, n) {
 #' @return list (of topological summary statistics)
 #' @export
 #' @examples
-get_all_ss <- function(df.nodes, df.edges, tree) {
-    ss.bl <- get_bl_ss(df.edges) # branch length ss
-    ss.topo <- get_topo_ss(df.nodes, tree) # topological ss
-    ss.ltt.coord <- get_ltt_coords(tree)
-    ss.ltt.slopes <- get_ltt_slopes(tree)
-
-    ss.all <- c(
-        ss.bl, list("n_taxa" = ceiling(nrow(df.nodes) / 2)),
-        ss.topo, ss.ltt.slopes, ss.ltt.coord
-    ) # merge all ss in a single list
-    return(ss.all)
+get_all_ss <- function(node_df, edge_df, tree) {
+    branch_length_ss <- get_bl_ss(edge_df)
+    topo_ss <- get_topo_ss(node_df, tree)
+    ltt_coord_ss <- get_ltt_coords(tree)
+    ltt_slope_ss <- get_ltt_slopes(tree)
+    c(
+        branch_length_ss,
+        list("n_taxa" = ceiling(nrow(node_df) / 2)),
+        topo_ss,
+        ltt_slope_ss,
+        ltt_coord_ss
+    )
 }
 
 #' Convert the matrix of LTT coordinates into a list
@@ -878,18 +879,11 @@ convert_coord_to_list <- function(ltt.coord) {
 #' @export
 #' @examples
 get_ss <- function(tree) {
-
-    # Create nodes data.frame
-    df.nodes <- create_nodes_data_frame(tree)
-    df.nodes <- fill_nodes_all(df.nodes, tree)
-
-    # Create edges data.frame
-    df.edges <- create_edges_data_frame(tree)
-    df.edges <- fill_edges_all(df.edges, df.nodes, tree)
-
-    # Compute all summary statistics
-    ss <- get_all_ss(df.nodes, df.edges, tree)
-    return(ss)
+    node_df <- create_nodes_data_frame(tree)
+    node_df <- fill_nodes_all(node_df, tree)
+    edge_df <- create_edges_data_frame(tree)
+    edge_df <- fill_edges_all(edge_df, node_df, tree)
+    get_all_ss(node_df, edge_df, tree)
 }
 
 #### Format Summary Statistics #####
