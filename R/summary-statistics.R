@@ -481,9 +481,9 @@ get_bl_ss <- function(df.edges) {
 #' @examples
 is_in_ladder <- function(node, tree) {
     sum <- 0
-    if (!is_tip(node, tree)) {
+    if (!is_tip(tree, node)) {
         children <- phangorn::Children(tree, node)
-        sum <- as.numeric(is_tip(children[1], tree) + is_tip(children[2], tree))
+        sum <- as.numeric(is_tip(tree, children[1]) + is_tip(tree, children[2]))
     }
     return(sum == 1)
 }

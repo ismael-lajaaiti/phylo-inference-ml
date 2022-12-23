@@ -51,11 +51,11 @@ get_child <- function(node, tree){
   dist.all <- castor::get_all_distances_to_root(tree)
 
   # First check that the node is not a tip (otherwise returns NA)
-  if (!is_tip(node, tree)){
+  if (!is_tip(tree, node)){
     idx <- phangorn::Children(tree, node)
 
     # If both child are tips (same dist. to root), random attribution (l/r)
-    if (is_tip(idx[1], tree) & is_tip(idx[2], tree)){
+    if (is_tip(tree, idx[1]) & is_tip(tree, idx[2])){
       child$left  <- idx[1]
       child$right <- idx[2]
     }
@@ -160,7 +160,7 @@ encode_phylo <- function(tree){
   dist_to_root <- castor::get_all_distances_to_root(tree)
   dist_to_ancestor <- get_all_distances_to_ancestor(tree)
   for (node in inorder){
-    if (is_tip(node, tree)){
+    if (is_tip(tree, node)){
       tips <- c(tips, dist_to_ancestor[node])
     }
     else{
@@ -179,7 +179,7 @@ encode_bisse <- function(tree){
   dist_to_root <- castor::get_all_distances_to_root(tree)
   dist_to_ancestor <- get_all_distances_to_ancestor(tree)
   for (node in inorder){
-    if (is_tip(node, tree)){
+    if (is_tip(tree, node)){
       tips <- c(tips, dist_to_ancestor[node])
       states <- c(states, tree$tip.state[[node]])
     }
