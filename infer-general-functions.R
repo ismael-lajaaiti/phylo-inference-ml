@@ -925,19 +925,13 @@ plot_together_nn_mle_predictions <- function(pred.nn.list, true.list, trees, nn_
         dev.off()
     }
 }
-
-
 #### end ####
 
-
 #### Generating, Converting, Saving and Loading ####
-
-
 drawPhyloSize <- function(n_taxa) {
     size <- ifelse(length(n_taxa) == 2, sample(n_taxa[1]:n_taxa[2], 1), n_taxa)
     return(size)
 }
-
 
 drawRateCRBD <- function(param.range) {
     n_param <- length(param.range)
@@ -974,7 +968,6 @@ drawRateBiSSE <- function(param.range) {
     return(vec.param)
 }
 
-
 #' Generate phylogenetic trees
 #'
 #' Create a given number of trees of a choosen size and rates. This trees are
@@ -994,138 +987,100 @@ drawRateBiSSE <- function(param.range) {
 #'
 #' @return out list of outputs
 #'         $trees -> trees, the list of the generated trees
-#'         $lambda -> vec.lambda, vector of speciation rates of the generated trees
+#'         $lambda -> vec.lambda,
+#'             vector of speciation rates of the generated trees
 #'         $mu -> vec.mu, vector of extinction rates of generated trees
 #'
 #' @export
 #' @examples
-generatePhyloCRBD <- function(n_trees, n_taxa, param.range, ss_check = TRUE) {
-
-    # Initialization
-    trees <- list() # where trees will be stored
-    n_param <- length(param.range) # number of parameters
-    true.param <- vector(mode = "list", length = n_param)
-    names(true.param) <- c("lambda", "mu")
-    if (ss_check) {
-        ss.names <- create_ss.names() # summary statistic names
-        df <- create_ss_dataframe(ss.names)
+generate_phylo <- function(model,
+                           n_trees,
+                           param_range,
+                           size_range,
+                           verbose = TRUE) {
+    model_lwr <- stringr::str_to_lower(model)
+    is_model_valid <- !(model_lwr %in% c("crbd", "bisse"))
+    if (is_model_valid) {
+        stop("`model` should be either 'CRBD' or 'BiSSE'.")
     }
-
-    cat("Generation of phylogenies...\n")
-
-    while (length(trees) < n_trees) {
-
-        # Generate the phylogenetic tree parameters
-        vec.param <- drawRateCRBD(param.range)
-
-        # Draw the number of tips of the tree
-        n_taxa.i <- drawPhyloSize(n_taxa)
-
-        # Generate tree
-        tree <- trees(c(vec.param[1], vec.param[2]), "bd", max.taxa = n_taxa.i)[[1]]
-
-        # Checking that Summary Statistics have no NA
-        if (ss_check) {
-            ss <- get_ss(tree) # compute summary statistics
-            no_NA_ss <- !any(is.na(ss)) # does SS have any NA values?
-        }
-
-        # If no checking or SS without NAs
-        if (no_NA_ss || !ss_check) {
-            trees <- append(trees, list(tree)) # save tree
-            if (ss_check) {
-                df <- add_row(df, ss)
-            }
-            for (i in 1:n_param) {
-                true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
-            }
-            progress(length(trees), n_trees,
-                progress.bar = TRUE, # print
-                init = (length(trees) == 1)
-            ) # progression
-        }
+    n_param <- length(param_range)
+    if (n_param != 2) {
+        stop("Two parameter ranges should be given.")
     }
-
-    cat("\nGeneration of phylogenies... Done.")
-
-    # Prepare output containing: trees (list), true param values (vector).
-    if (ss_check) {
-        out <- list(
-            "trees" = trees,
-            "param" = true.param,
-            "ss" = df
-        )
+    true_param <- vector(mode = "list", length = n_param)
+    if (model_lwr == "crbd") {
+        names(true_param) <- c("lambda", "mu")
+        generate_phylo_single <- generate_crbd_phylo_single
+        param_idx <- c(1, 2)
     } else {
-        out <- list(
-            "trees" = trees,
-            "param" = true.param
-        )
+        names(true_param) <- c("lambda", "q")
+        generate_phylo_single <- generate_bisse_phylo_single
+        param_idx <- c(1, 6)
     }
-    return(out)
+    tree_list <- list()
+    ss_names <- create_ss.names()
+    df <- create_ss_dataframe(ss_names)
+    if (verbose) {
+        cat("Simulating phylogenies...\n")
+    }
+    while (length(tree_list) < n_trees) {
+        out <- generate_phylo_single(param_range, size_range)
+        tree <- out$tree
+        param <- out$param
+        ss <- get_ss(tree)
+        na_in_ss <- any(is.na(ss))
+        if (!na_in_ss) {
+            tree_list <- append(tree_list, list(tree))
+            df <- add_row(df, ss)
+            for (i in seq_along(param_idx)) {
+                idx <- param_idx[i]
+                true_param[[i]] <- c(true_param[[i]], param[idx])
+            }
+            if (verbose) {
+                svMisc::progress(length(tree_list), n_trees,
+                    progress.bar = TRUE,
+                    init = (length(tree_list) == 1)
+                )
+            }
+        }
+    }
+    if (verbose) {
+        cat("\nSimulating phylogenies... Done.")
+    }
+    list(
+        "trees" = trees,
+        "param" = true_param,
+        "ss" = df
+    )
 }
 
-
-
-
-generatePhyloBiSSE <- function(n_trees, n_taxa, param.range, ss_check = TRUE) {
-    trees <- list()
-    name.param <- c("lambda0", "lambda1", "mu0", "mu1", "q01", "q10")
-    true.param <- vector(mode = "list", length = 6)
-    names(true.param) <- name.param
-    if (ss_check) {
-        ss.names <- create_ss.names() # summary statistic names
-        df <- create_ss_dataframe(ss.names)
-    }
-
-    while (length(trees) < n_trees) {
-        vec.param <- drawRateBiSSE(param.range) # draw randomly param. values
-        n_taxa.i <- drawPhyloSize(n_taxa) # draw phylogeny size
-
-        # Generate phylogeny
-        tree <- NULL
-        lik <- NULL
-        while (is.null(tree) | is.null(lik)) {
-            tree <- tree.bisse(vec.param, max.taxa = n_taxa.i, x0 = NA)
-            if (!(all(tree$tip.state == 0) | all(tree$tip.state == 1))) {
-                lik <- make.bisse(tree, tree$tip.state)
-            }
-        }
-
-        # Checking that summary statistics have no NA
-        if (ss_check) {
-            ss <- get_ss(tree) # compute summary statistics
-            no_NA_ss <- !any(is.na(ss)) # does SS have any NA values?
-        }
-
-        if (no_NA_ss || !ss_check) {
-            trees <- append(trees, list(tree)) # save tree
-            if (ss_check) {
-                df <- add_row(df, ss)
-            }
-            for (i in 1:6) {
-                true.param[[i]] <- c(true.param[[i]], vec.param[i]) # save param.
-            }
-            # progress(length(trees), n_trees, progress.bar = TRUE, # print
-            #         init = (length(trees)==1))                   # progression
-        }
-    }
-
-    if (ss_check) {
-        out <- list(
-            "trees" = trees,
-            "param" = true.param,
-            "ss" = df
-        )
-    } else {
-        out <- list(
-            "trees" = trees,
-            "param" = true.param
-        )
-    }
-
-    return(out)
+#' Generate a single phylogeny under the CRBD model
+generate_crbd_phylo_single <- function(param_range, size_range) {
+    param <- drawRateCRBD(param_range)
+    tree_size <- drawPhyloSize(size_range)
+    tree <- ape::trees(c(param[1], param[2]), "bd", max.taxa = tree_size)[[1]]
+    list(tree = tree, param = param)
 }
 
+#' Generate a single phylogeny under the BiSSE model
+generate_bisse_phylo_single <- function(param_range, size_range) {
+    param <- drawRateBiSSE(param_range)
+    size <- drawPhyloSize(size_range)
+    tree <- NULL
+    lik <- NULL
+    tree_not_valid <- TRUE
+    while (tree_not_valid) {
+        tree <- diversitree::tree.bisse(param, max.taxa = size, x0 = NA)
+        all_tip_0 <- all(tree$tip.state == 0)
+        all_tip_1 <- all(tree$tip.state == 1)
+        all_tip_identical <- all_tip_0 || all_tip_1
+        if (!(all_tip_identical)) {
+            lik <- diversitree::make.bisse(tree, tree$tip.state)
+        }
+        tree_not_valid <- is.null(tree) || is.null(lik)
+    }
+    list(tree = tree, param = param)
+}
 
 generatePhylo <- function(model, n_trees, n_taxa, param.range, ss_check = TRUE) {
     if (model == "crbd") {

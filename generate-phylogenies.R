@@ -2,46 +2,32 @@
 # or with the Binary State Speciation and Extinction model (BiSSE)
 
 #### Dependencies ####
-
 source("R/libraries.R")
+source("R/phylogeny-properties.R")
 source("infer-general-functions.R")
 
-#### end ####
-
-model <- "bisse" # type of the model, either: "crbd" or "bisse"
-n_trees <- 100000 # number of trees to generate
-n_taxa <- c(100, 1000) # range size of the generated phylogenies
-compute_mle <- TRUE # should mle predictions be computed and saved
-
 #### Defining parameter space of the model ####
+model <- "BiSSE"
+n_trees <- 100
+tree_size_range <- c(100, 1000)
+compute_mle <- TRUE
 
-# For the CRBD model
-lambda_range <- c(0.1, 1.0) # speciation rate
-epsilon_range <- c(0.0, 0.9) # turnover rate
-param.range.crbd <- list(
-    "lambda" = lambda_range,
-    "epsilon" = epsilon_range
+crbd_param_range <- list(
+    "lambda" = c(0.1, 1.0), # speciation rate
+    "epsilon" = c(0.0, 0.9) # turnover rate
 )
-
-# For the BiSSE model
-lambda_range <- c(0.1, 1.) # speciation rate
-q_range <- c(0.01, 0.1) # transition rate
-param.range.bisse <- list(
-    "lambda" = lambda_range,
-    "q" = q_range
+bisse_param_range <- list(
+    "lambda" = c(0.1, 1.), # speciation rate
+    "q" = c(0.01, 0.1) # transition rate
 )
-
-# Select the parameter space of the choosen diversification model
-param.range.list <- list(
-    "crbd" = param.range.crbd,
-    "bisse" = param.range.bisse
+param_range_list <- list(
+    "crbd" = crbd_param_range,
+    "bisse" = bisse_param_range
 )
-param.range <- param.range.list[[model]]
-
-#### end ####
-
+param_range <- param_range_list[[stringr::str_to_lower(model)]]
 
 #### Generate phylogenies - Compute Sum. Stat. & MLE ####
+tree_list <- generate_phylo(model, n_trees, param_range, size_range)
 
 # Generating and saving phylogenies
 
@@ -50,7 +36,7 @@ n_rep <- 10
 n_trees_per_rep <- 50000
 
 r <- mclapply(1:n_rep, function(i) {
-    out <- generatePhylo(model, n_trees_per_rep, n_taxa, param.range)
+    out <- generatePhylo(model, n_trees_per_rep, n_taxa, param_range)
     print("Phylogenies generated.")
     mle.param <- getPredsMLE(model, out$trees)
     print("MLE predictions computed.")
@@ -74,7 +60,7 @@ for (i in 1:n_rep) {
 
 
 #
-# savePhylogeny(out$trees, out$param, n_trees, n_taxa, param.range) # save
+# savePhylogeny(out$trees, out$param, n_trees, n_taxa, param_range) # save
 #
 #
 # # Computing summary statistics
