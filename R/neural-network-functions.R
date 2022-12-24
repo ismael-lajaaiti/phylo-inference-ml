@@ -65,7 +65,7 @@ train_neural_network <- function(create_nn,
 #' Compute neural network parameter predictions on the test set.
 get_predictions <- function(nn_trained,
                             test_dl,
-                            true_param,
+                            param_name,
                             model_type,
                             gpu_id,
                             save = FALSE,
@@ -76,9 +76,9 @@ get_predictions <- function(nn_trained,
         error_msg <- stringr::str_c("`model_type` should be in: ", error_msg)
         stop(error_msg)
     }
-    n_out <- length(names(true_param))
+    n_out <- length(param_name)
     nn_predictions <- vector(mode = "list", length = n_out)
-    names(nn_predictions) <- names(true_param)
+    names(nn_predictions) <- param_name
     coro::loop(for (b in test_dl) {
         out <- nn_trained(b$x$to(device = gpu_id))
         pred <- as.numeric(out$to(device = "cpu"))
