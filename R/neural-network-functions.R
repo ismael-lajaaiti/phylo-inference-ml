@@ -72,8 +72,8 @@ get_predictions <- function(nn_trained,
                             verbose = FALSE) {
     valid_model <- c("cnn-cblv", "dnn-ss", "cnn-ltt", "rnn-ltt", "gnn-phy")
     if (!(model_type %in% valid_model)) {
-        error_msg <- stringr::str_c(valid_model, sep = ", ")
-        error_msg <- stringr::str_c("`model_type` sould be in: ", error_msg)
+        error_msg <- stringr::str_c(valid_model, collapse = ", ")
+        error_msg <- stringr::str_c("`model_type` should be in: ", error_msg)
         stop(error_msg)
     }
     n_out <- length(names(true_param))
@@ -88,7 +88,7 @@ get_predictions <- function(nn_trained,
     })
     if (save) {
         fname <- stringr::str_c(
-            dir,
+            "bisse-1e6-phylogenies/",
             "predictions/",
             model_type,
             "-predictions.rds"
