@@ -6,7 +6,7 @@ source("R/neural-network-functions.R")
 source("R/utils.R")
 
 #### Set-up ####
-gpu_id <- "cuda:1"
+gpu_id <- "cuda:3"
 diversification <- "bisse"
 range_tree_size <- c(100, 1000)
 
@@ -32,11 +32,10 @@ valid_dl <- valid_ds %>% dataloader(batch_size = batch_size, shuffle = FALSE)
 test_dl <- test_ds %>% dataloader(batch_size = 1, shuffle = FALSE)
 
 #### Prepare the NN ####
-n_hidden <- 100
-n_layer <- 1
+n_hidden <- 200
+n_layer <- 2
 p_dropout <- 0.0
 n_out <- 2
-
 
 create_rnn <- nn_module(
     initialize = function() {
@@ -69,7 +68,7 @@ rnn_trained <- train_neural_network(create_rnn, gpu_id, train_dl, valid_dl)
 rnn_predictions <- get_predictions(
     rnn_trained,
     test_dl,
-    true_param,
+    names(true_param),
     "rnn-ltt",
     gpu_id,
     save = TRUE,
