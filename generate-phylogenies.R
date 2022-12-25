@@ -27,7 +27,7 @@ param_range_list <- list(
 param_range <- param_range_list[[stringr::str_to_lower(model)]]
 
 #### Generate phylogenies - Compute Sum. Stat. & MLE ####
-tree_list <- generate_phylo(model, n_trees, param_range, tree_size_range)
+out <- generate_phylo(model, n_trees, param_range, tree_size_range)
 
 # Generating and saving phylogenies
 
