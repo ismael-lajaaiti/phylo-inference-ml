@@ -1048,7 +1048,7 @@ generate_phylo <- function(model,
         cat("\nSimulating phylogenies... Done.")
     }
     list(
-        "trees" = trees,
+        "trees" = tree_list,
         "param" = true_param,
         "ss" = df
     )
@@ -1056,10 +1056,10 @@ generate_phylo <- function(model,
 
 #' Generate a single phylogeny under the CRBD model
 generate_crbd_phylo_single <- function(param_range, size_range) {
-    param <- drawRateCRBD(param_range)
+    p <- drawRateCRBD(param_range)
     tree_size <- drawPhyloSize(size_range)
-    tree <- ape::trees(c(param[1], param[2]), "bd", max.taxa = tree_size)[[1]]
-    list(tree = tree, param = param)
+    tree <- diversitree::trees(c(p[1], p[2]), "bd", max.taxa = tree_size)[[1]]
+    list(tree = tree, param = p)
 }
 
 #' Generate a single phylogeny under the BiSSE model
