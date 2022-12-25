@@ -7,7 +7,7 @@ n_core <- 10
 n_rep <- 50
 prefix_raw_phylo <- "bisse-1e6-phylogenies/raw/bisse-n20000-trees-and-params"
 prefix_gnn <- "bisse-1e6-phylogenies/formatted/graph/bisse-n20000-node-edge"
-mclapply(1:n_rep, function(i) {
+parallel::mclapply(1:n_rep, function(i) {
     out <- readRDS(
         stringr::str_c(
             prefix_raw_phylo,
@@ -20,10 +20,7 @@ mclapply(1:n_rep, function(i) {
     df_list <- list()
     for (k in 1:n_tree) {
         tree <- tree_list[[k]]
-        edge <- edge_df(tree)
-        node <- node_df(tree)
-        df <- list("node" = node, "edge" = edge)
-        df_list[[k]] <- df
+        df_list[[k]] <- df_for_gnn(tree)
     }
     fname <- stringr::str_c(
         prefix_gnn,
@@ -31,5 +28,5 @@ mclapply(1:n_rep, function(i) {
         ".rds"
     )
     saveRDS(df_list, fname)
-    print(str_c(fname, " saved."))
+    print(stringr::str_c(fname, " saved."))
 }, mc.cores = n_core)

@@ -11,3 +11,7 @@ add_params_to_sumstat <- function(df, params) {
     }
     df
 }
+
+df_for_gnn <- function(tree) {
+    list(edge = edge_df(tree), node = node_df(tree))
+}
