@@ -33,7 +33,7 @@ function format_param(raw_param)
 end
 
 """
-Create the train, valid and test datasets.
+Create the graphs train, valid and test datasets.
 """
 function create_ds(all_data, all_param, idx)
     ds = GNNGraph[]
@@ -51,18 +51,23 @@ function create_ds(all_data, all_param, idx)
 end
 
 # Read data & create GNN input
-input_data = load("data/test-node-edge-df.rds")
-raw_param = load("data/test-data-for-jl-gnn.rds")["param"]
-all_param = format_param(raw_param)
+input_data = load("bisse-1e6-phylogenies/formatted/graph/bisse-n20000-node-edge01.rds")
+raw_param = load("bisse-1e6-phylogenies/raw/bisse-true-params-all.rds")
+param_batch = Dict("lambda" => raw_param["lambda"][1:20000], "q" => raw_param["q"][1:20000])
+all_param = format_param(param_batch)
 all_graph = GNNGraph[]
-indices = load("data/some-indices.rds")
+#! Indices are made up for testing purpose should be updated when doing the real thing.
+# Uncomment code block below to load the real indices to use,
+# once the test phase is done.
+# indices = load("bisse-1e6-phylogenies/indices-1e6-phylogenies.rds")
+indices = Dict("train" => 1:18000, "valid" => 18001:19000, "test" => 19001:20000)
 ds_dict = Dict{}()
 for split in ["train", "test", "valid"]
     idx = indices[split] |> collect # collect might not be necessary, to check
     ds_dict[split] = create_ds(input_data, all_param, idx)
 end
-train_dl = DataLoader(ds_dict["train"]; batchsize = 40, shuffle = true)
-valid_dl = DataLoader(ds_dict["valid"]; batchsize = 10, shuffle = true)
+train_dl = DataLoader(ds_dict["train"]; batchsize = 64, shuffle = true)
+valid_dl = DataLoader(ds_dict["valid"]; batchsize = 64, shuffle = true)
 test_dl = DataLoader(ds_dict["test"]; batchsize = 1, shuffle = false)
 
 # Neural network set-up
