@@ -44,3 +44,4 @@ neural-networks-models/
 neural-networks-predictions/
 data/
 *.rds
+Manifest.toml
